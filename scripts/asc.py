@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""App Store Connect helper for Virt's TestFlight workflow (copied from time2play-app's). Runs on a GitHub runner,
+never prints a key.
+
+  asc.py ready               checks the key works, registers the two App IDs if they're missing (the app and its
+                             timer extension), and checks the App Store Connect app exists
+  asc.py signing OUTDIR      the App Store signing pieces: the distribution certificate and an App Store profile for
+                             each bundle id
+  asc.py wait BUILD          waits until build BUILD of version 1.0 is processed, then turns on internal testing
+  asc.py status              lists the app's builds (number, state) for the log
+
+Reads ASC_KEY_PATH (the .p8 file), ASC_KEY_ID and ASC_ISSUER_ID from the environment.
+
+The distribution certificate's private key isn't stored anywhere. It's re-made on each run from the App Store Connect
+key (a one-way hash of it seeds the generator), so every run gets the same key, finds the certificate Apple already
+issued for it, and Apple's limit on distribution certificates is never reached. A new App Store Connect key makes one
+new certificate, once. Virt uses the same App Store Connect key and the same seed as time2play-app, so both apps
+share one distribution certificate.
+
+It never submits anything for App Review.
+"""
+import base64, hashlib, hmac, json, os, sys, time, urllib.error, urllib.parse, urllib.request
+
+API = "https://api.appstoreconnect.apple.com"
+BUNDLE_ID = "com.tyleralocke.virt"
+# every bundle id the build signs, with the name its App ID gets if it has to be registered
+BUNDLES = {"com.tyleralocke.virt": "Virt", "com.tyleralocke.virt.timer": "Virt Timer"}
+# the env names the workflow reads each profile's name from
+PROFILE_ENV = {"com.tyleralocke.virt": "VIRT_PROFILE_NAME", "com.tyleralocke.virt.timer": "VIRT_TIMER_PROFILE_NAME"}
+VERSION = "1.0"
+
+
+def die(msg):
+    print(f"::error::{msg}")
+    sys.exit(1)
+
+
+def key_text():
+    with open(os.environ["ASC_KEY_PATH"], "rb") as f:
+        return f.read()
+
+
+def token():
+    import jwt  # pyjwt
+    now = int(time.time())
+    return jwt.encode({"iss": os.environ["ASC_ISSUER_ID"], "iat": now, "exp": now + 15 * 60, "aud": "appstoreconnect-v1"},
+                      key_text(), algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"], "typ": "JWT"})
+
+
+def call(method, path, body=None, ok_missing=False, tries=4):
+    url = path if path.startswith("http") else API + path
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method,
+                                 headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else {}
+    except (urllib.error.URLError, TimeoutError) as e:
+        code = getattr(e, "code", None)
+        # Apple's API has passing 5xx errors (a 500 on GET /v1/bundleIds, Nov 17): wait and try again, reads only
+        if tries > 1 and method == "GET" and (code is None or code >= 500):
+            print(f"App Store Connect: {code or 'no answer'} to {method} {urllib.parse.urlparse(url).path}; trying again")
+            time.sleep(10 * (5 - tries))
+            return call(method, path, body, ok_missing, tries - 1)
+        if not isinstance(e, urllib.error.HTTPError):
+            raise
+        detail = e.read().decode(errors="replace")
+        if ok_missing and e.code == 404:
+            return None
+        # Apple's errors name the problem (a missing permission says FORBIDDEN_ERROR); they never contain the key
+        print(f"App Store Connect said {e.code} to {method} {urllib.parse.urlparse(url).path}:\n{detail}")
+        raise SystemExit(2)
+
+
+def q(params):
+    return "?" + urllib.parse.urlencode(params)
+
+
+def the_app():
+    apps = call("GET", "/v1/apps" + q({"filter[bundleId]": BUNDLE_ID}))["data"]
+    apps = [a for a in apps if a["attributes"]["bundleId"] == BUNDLE_ID]
+    if not apps:
+        die(f"No App Store Connect app with bundle id {BUNDLE_ID} (App Store Connect -> Apps -> + -> New App)")
+    return apps[0]
+
+
+# ---------- signing ----------
+
+class Stream:
+    """A deterministic byte stream from a secret seed (SHA-512 in counter mode)."""
+    def __init__(self, seed):
+        self.seed, self.n, self.buf = seed, 0, b""
+
+    def __call__(self, k):
+        while len(self.buf) < k:
+            self.buf += hashlib.sha512(self.seed + self.n.to_bytes(8, "big")).digest()
+            self.n += 1
+        out, self.buf = self.buf[:k], self.buf[k:]
+        return out
+
+
+def distribution_key():
+    from Crypto.PublicKey import RSA  # pycryptodome, pinned in the workflow so the same seed makes the same key
+    seed = hmac.new(key_text(), b"time2play app store distribution key v1", hashlib.sha256).digest()
+    return RSA.generate(2048, randfunc=Stream(seed))
+
+
+def signing(outdir):
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.x509.oid import NameOID
+
+    os.makedirs(outdir, exist_ok=True)
+    os.chmod(outdir, 0o700)
+    rsa = distribution_key()
+    pem = rsa.export_key(pkcs=8)
+    key = serialization.load_pem_private_key(pem, password=None)
+    n = key.public_key().public_numbers().n
+
+    # the certificate Apple issued for this key, if there is one
+    cert_id, cert_der = None, None
+    for c in call("GET", "/v1/certificates" + q({"filter[certificateType]": "DISTRIBUTION", "limit": 200}))["data"]:
+        der = base64.b64decode(c["attributes"]["certificateContent"])
+        if x509.load_der_x509_certificate(der).public_key().public_numbers().n == n:
+            cert_id, cert_der = c["id"], der
+            break
+    if cert_id:
+        print(f"Distribution certificate: found ({cert_id})")
+    else:
+        csr = (x509.CertificateSigningRequestBuilder()
+               .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Time2Play GitHub builds"),
+                                        x509.NameAttribute(NameOID.COUNTRY_NAME, "US")]))
+               .sign(key, hashes.SHA256()))
+        csr_pem = csr.public_bytes(serialization.Encoding.PEM).decode()
+        made = call("POST", "/v1/certificates", {"data": {"type": "certificates", "attributes": {
+            "certificateType": "DISTRIBUTION", "csrContent": csr_pem}}})["data"]
+        cert_id, cert_der = made["id"], base64.b64decode(made["attributes"]["certificateContent"])
+        print(f"Distribution certificate: made a new one ({cert_id})")
+
+    # an App Store profile for each bundle id, with this certificate
+    profiles = {b: profile_for(b, cert_id) for b in BUNDLES}
+
+    # a .p12 the Mac's keychain accepts (its importer wants the older SHA-1 / 3DES packing), with a throwaway password
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    import secrets
+    password = secrets.token_hex(16).encode()
+    enc = (serialization.PrivateFormat.PKCS12.encryption_builder().kdf_rounds(50000)
+           .key_cert_algorithm(pkcs12.PBES.PBESv1SHA1And3KeyTripleDESCBC).hmac_hash(hashes.SHA1()).build(password))
+    p12 = pkcs12.serialize_key_and_certificates(b"Virt distribution", key, x509.load_der_x509_certificate(cert_der), None, enc)
+    with open(os.path.join(outdir, "dist.p12"), "wb") as f:
+        f.write(p12)
+    with open(os.path.join(outdir, "dist.p12.pass"), "wb") as f:
+        f.write(password)
+    with open(os.environ.get("GITHUB_ENV", os.devnull), "a") as env:
+        for b, profile in profiles.items():
+            with open(os.path.join(outdir, f"{b}.mobileprovision"), "wb") as f:
+                f.write(base64.b64decode(profile["attributes"]["profileContent"]))
+            env.write(f"{PROFILE_ENV[b]}={profile['attributes']['name']}\n")
+
+
+
+# ---------- App IDs ----------
+
+def bundle_id(identifier, register=True):
+    """The App ID's App Store Connect id, registering it first if it's missing (no capabilities: Virt needs none)."""
+    found = call("GET", "/v1/bundleIds" + q({"filter[identifier]": identifier, "limit": 20}))["data"]
+    found = [b for b in found if b["attributes"]["identifier"] == identifier]
+    if found:
+        print(f"App ID {identifier}: registered")
+        return found[0]["id"]
+    if not register:
+        die(f"The App ID {identifier} isn't registered")
+    made = call("POST", "/v1/bundleIds", {"data": {"type": "bundleIds", "attributes": {
+        "identifier": identifier, "name": BUNDLES.get(identifier, identifier.replace(".", " ")), "platform": "IOS"}}})["data"]
+    print(f"App ID {identifier}: registered it now")
+    return made["id"]
+
+
+def profile_for(identifier, cert_id):
+    bundle = bundle_id(identifier)
+    caps = call("GET", f"/v1/bundleIds/{bundle}/bundleIdCapabilities")["data"]
+    print(f"  capabilities: " + (", ".join(sorted(c["attributes"]["capabilityType"] for c in caps)) or "none"))
+    name = f"{BUNDLES[identifier]} App Store {cert_id[:6]}"
+    profile = None
+    found = call("GET", "/v1/profiles" + q({"filter[name]": name, "filter[profileType]": "IOS_APP_STORE",
+                                             "include": "certificates", "limit": 50}))
+    for p in found["data"]:
+        certs = [c["id"] for c in p["relationships"]["certificates"]["data"] or []]
+        if p["attributes"]["profileState"] == "ACTIVE" and cert_id in certs:
+            profile = p
+    if profile:
+        print(f"  App Store profile: found ({name})")
+        return profile
+    if found["data"]:  # same name but out of date: a fresh one with a dated name
+        name = f"{name} {time.strftime('%Y%m%d%H%M')}"
+    profile = call("POST", "/v1/profiles", {"data": {"type": "profiles", "attributes": {
+        "name": name, "profileType": "IOS_APP_STORE"}, "relationships": {
+        "bundleId": {"data": {"type": "bundleIds", "id": bundle}},
+        "certificates": {"data": [{"type": "certificates", "id": cert_id}]}}}})["data"]
+    print(f"  App Store profile: made ({name})")
+    return profile
+
+
+def ready():
+    for b in BUNDLES:
+        bundle_id(b)
+    app = the_app()
+    print(f"App Store Connect app: {app['attributes']['name']} ({app['id']}), bundle id {app['attributes']['bundleId']}")
+    print("READY")
+
+# ---------- after the upload ----------
+
+def builds(app_id, number=None):
+    params = {"filter[app]": app_id, "sort": "-uploadedDate", "limit": 20, "fields[builds]": "version,processingState,uploadedDate,expired"}
+    if number:
+        params["filter[version]"] = number
+    return call("GET", "/v1/builds" + q(params))["data"]
+
+
+def status():
+    app = the_app()
+    print(f"App: {app['attributes']['name']} ({app['id']})")
+    for b in builds(app["id"]):
+        a = b["attributes"]
+        print(f"  build {a['version']}: {a['processingState']} (uploaded {a['uploadedDate']})")
+
+
+def internal_testing(app_id):
+    groups = call("GET", f"/v1/apps/{app_id}/betaGroups")["data"]
+    internal = [g for g in groups if g["attributes"].get("isInternalGroup")]
+    if internal:
+        group = internal[0]
+        print(f"Internal testing group: {group['attributes']['name']} (already there)")
+    else:
+        group = call("POST", "/v1/betaGroups", {"data": {"type": "betaGroups", "attributes": {
+            "name": "Tyler", "isInternalGroup": True, "hasAccessToAllBuilds": True},
+            "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+        print("Internal testing group: made \"Tyler\" (every new build goes to it)")
+    # add the Account Holder; internal testers have to be App Store Connect users
+    try:
+        users = call("GET", "/v1/users" + q({"filter[roles]": "ACCOUNT_HOLDER", "limit": 5}))["data"]
+    except SystemExit:
+        print("Couldn't list the team's users with this key; add yourself in TestFlight → Internal Testing")
+        return
+    have = call("GET", f"/v1/betaGroups/{group['id']}/betaTesters" + q({"limit": 50}))["data"]
+    have_emails = {(t["attributes"].get("email") or "").lower() for t in have}
+    for u in users:
+        email = u["attributes"]["username"]
+        print(f"::add-mask::{email}")
+        if email.lower() in have_emails:
+            print("The Account Holder is already an internal tester")
+            continue
+        try:
+            call("POST", "/v1/betaTesters", {"data": {"type": "betaTesters", "attributes": {
+                "email": email, "firstName": u["attributes"].get("firstName") or "Tyler",
+                "lastName": u["attributes"].get("lastName") or "Locke"},
+                "relationships": {"betaGroups": {"data": [{"type": "betaGroups", "id": group["id"]}]}}}})
+            print("Added the Account Holder as an internal tester")
+        except SystemExit:
+            print("Couldn't add the Account Holder as a tester with this key; add yourself in TestFlight → Internal Testing")
+
+
+def wait(number, minutes=40):
+    app = the_app()
+    end = time.time() + minutes * 60
+    state = None
+    while time.time() < end:
+        found = builds(app["id"], number)
+        if found:
+            state = found[0]["attributes"]["processingState"]
+            print(f"{time.strftime('%H:%M:%S')} build {number}: {state}")
+            if state in ("VALID", "FAILED", "INVALID"):
+                break
+        else:
+            print(f"{time.strftime('%H:%M:%S')} build {number}: not listed yet")
+        time.sleep(60)
+    with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a") as f:
+        f.write(f"Build {number} on App Store Connect: {state or 'not listed yet'}\n")
+    internal_testing(app["id"])
+    if state in ("FAILED", "INVALID"):
+        die(f"Apple marked build {number} {state}; App Store Connect emails the reason")
+    if state != "VALID":
+        print(f"Build {number} is still processing after {minutes} minutes; it shows in TestFlight when Apple finishes")
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd == "ready":
+        ready()
+    elif cmd == "signing":
+        signing(sys.argv[2])
+    elif cmd == "wait":
+        wait(sys.argv[2])
+    elif cmd == "status":
+        status()
+    else:
+        die(__doc__)

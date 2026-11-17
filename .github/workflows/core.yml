@@ -1,0 +1,17 @@
+# VirtCore's tests on Linux (free and quick): every push that changes Core/. The Mac run tests it again.
+name: Core tests (Linux)
+on:
+  push:
+    paths: ["Core/**", ".github/workflows/core.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - shell: bash
+        run: set -o pipefail; cd Core && swift test 2>&1 | tail -40
