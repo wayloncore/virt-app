@@ -202,6 +202,23 @@ def profile_for(identifier, cert_id):
     return profile
 
 
+def probe():
+    """One read from each part of the API, with Apple's answer, so a failing check shows whether it's everything
+    (Apple, or the key) or one endpoint."""
+    for path in ["/v1/apps?limit=1", "/v1/bundleIds?limit=1", "/v1/bundleIds?filter[identifier]=com.tyleralocke.virt",
+                 "/v1/certificates?limit=1", "/v1/profiles?limit=1", "/v1/users?limit=1", "/v1/builds?limit=1"]:
+        req = urllib.request.Request(API + path, headers={"Authorization": f"Bearer {token()}"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                print(f"probe {path}: {r.status}")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode(errors="replace")
+            code = json.loads(body).get("errors", [{}])[0].get("code") if body.startswith("{") else ""
+            print(f"probe {path}: {e.code} {code}")
+        except Exception as e:  # no answer at all
+            print(f"probe {path}: {type(e).__name__}")
+
+
 def ready():
     for b in BUNDLES:
         bundle_id(b)
@@ -288,6 +305,8 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "ready":
         ready()
+    elif cmd == "probe":
+        probe()
     elif cmd == "signing":
         signing(sys.argv[2])
     elif cmd == "wait":
