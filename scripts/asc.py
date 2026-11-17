@@ -47,7 +47,7 @@ def token():
                       key_text(), algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"], "typ": "JWT"})
 
 
-def call(method, path, body=None, ok_missing=False):
+def call(method, path, body=None, ok_missing=False, tries=4):
     url = path if path.startswith("http") else API + path
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method,
@@ -56,7 +56,15 @@ def call(method, path, body=None, ok_missing=False):
         with urllib.request.urlopen(req, timeout=60) as r:
             raw = r.read()
             return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as e:
+    except (urllib.error.URLError, TimeoutError) as e:
+        code = getattr(e, "code", None)
+        # Apple's API has passing 5xx errors (a 500 on GET /v1/bundleIds, Nov 17): wait and try again, reads only
+        if tries > 1 and method == "GET" and (code is None or code >= 500):
+            print(f"App Store Connect: {code or 'no answer'} to {method} {urllib.parse.urlparse(url).path}; trying again")
+            time.sleep(10 * (5 - tries))
+            return call(method, path, body, ok_missing, tries - 1)
+        if not isinstance(e, urllib.error.HTTPError):
+            raise
         detail = e.read().decode(errors="replace")
         if ok_missing and e.code == 404:
             return None
