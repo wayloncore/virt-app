@@ -3,7 +3,7 @@
 # never submits anything for App Review.
 #
 # First a quick Linux check (no Mac minutes): the key works, both App IDs are registered (it registers a missing one),
-# and the App Store Connect app exists. `check_only` stops there.
+# and the App Store Connect app exists. `check_only` (or [ready] in a pushed commit's message) stops there.
 #
 # Keys: the App Store Connect key is written to a temp file only for each job and deleted at the end. The
 # distribution certificate's key is re-made from it each run (scripts/asc.py), so no signing key is stored anywhere.
@@ -28,7 +28,7 @@ env:
   TIMER_ID: com.tyleralocke.virt.timer
 jobs:
   ready:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[testflight]')
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[testflight]') || contains(github.event.head_commit.message, '[ready]')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -61,7 +61,7 @@ jobs:
 
   upload:
     needs: ready
-    if: github.event.inputs.check_only != 'true'
+    if: github.event.inputs.check_only != 'true' && !contains(github.event.head_commit.message, '[ready]')
     runs-on: macos-15
     timeout-minutes: 45
     outputs:
