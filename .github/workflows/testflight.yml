@@ -55,6 +55,7 @@ jobs:
           export ASC_KEY_PATH="$RUNNER_TEMP/asc/key.p8"
           python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" -q install cryptography==44.0.2 pyjwt==2.10.1
           "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py ready || rc=$?
+          if [ -n "$rc" ]; then "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py probe || true; fi
           "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py status || true
           rm -rf "$RUNNER_TEMP/asc"
           exit ${rc:-0}
