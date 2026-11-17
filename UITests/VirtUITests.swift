@@ -1,17 +1,31 @@
 import XCTest
 
-/// Virt in the iPhone simulator: the studio's sign-in opens inside the app, the offline screen and Retry, and the
-/// bridge end to end with a stand-in page (the real Training page is behind the sign-in, which a GitHub Mac can't
+/// Virt in the iPhone simulator: the Face ID lock (with the test build answering for Face ID), the studio's sign-in
+/// opens inside the app, the offline screen and Retry, and the bridge end to end with a stand-in page (the real Training page is behind the sign-in, which a GitHub Mac can't
 /// pass): a rest's alert, the screen kept on, the Live Activity, and a lock-screen button reaching the page.
 final class VirtUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
-    func launch(env: [String: String] = [:]) -> XCUIApplication {
+    /// Opens Virt. The test build answers for Face ID (`-uitest-skip-faceid`: Unlock works; `-uitest-faceid-fails`:
+    /// it never does), and by default this taps Unlock, the way Tyler would.
+    func launch(env: [String: String] = [:], unlock: Bool = true, faceIDFails: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-uitest", "-uitest-reset"]
+        app.launchArguments = ["-uitest", "-uitest-reset", faceIDFails ? "-uitest-faceid-fails" : "-uitest-skip-faceid"]
         app.launchEnvironment = env
         app.launch()
+        if unlock {
+            let button = app.buttons["unlock"]
+            XCTAssertTrue(button.waitForExistence(timeout: 15), "the lock screen shows first")
+            button.tap()
+            XCTAssertTrue(app.otherElements["lock-screen"].waitForNonExistence(timeout: 5), "Unlock opens the app")
+        }
         return app
+    }
+
+    /// True while Training's web view can be seen and touched.
+    func studioShows(_ app: XCUIApplication) -> Bool {
+        let web = app.webViews["studio"]
+        return web.exists && web.isHittable
     }
 
     func status(_ app: XCUIApplication) -> String {
@@ -121,6 +135,97 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(waitStatus(app, contains: "awake off"), "a saved workout lets the screen sleep: \(status(app))")
         XCTAssertTrue(status(app).contains("alerts 0"), status(app))
         XCTAssertTrue(activityOn, "the Live Activity started")
+    }
+
+    // MARK: - The Face ID lock
+
+    /// A fresh launch shows the lock screen first, with Training hidden; Unlock shows the page, already loaded.
+    func testLockScreenFirstThenUnlock() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page], unlock: false)
+        XCTAssertTrue(app.otherElements["lock-screen"].waitForExistence(timeout: 15), "the lock screen shows first")
+        let button = app.buttons["unlock"]
+        XCTAssertTrue(button.exists)
+        sleep(4)  // the page loads behind the lock
+        XCTAssertFalse(studioShows(app), "nothing of Training shows while locked")
+        shot("lock")
+        button.tap()
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 3), "unlocking shows the page at once")
+        XCTAssertFalse(app.otherElements["lock-screen"].exists)
+        XCTAssertTrue(studioShows(app))
+    }
+
+    /// When Face ID fails or he cancels: still locked, a short note, and Unlock to try again. No way around it.
+    func testFailedUnlockStaysLocked() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page], unlock: false, faceIDFails: true)
+        let button = app.buttons["unlock"]
+        XCTAssertTrue(button.waitForExistence(timeout: 15))
+        button.tap()
+        let note = app.staticTexts["lock-note"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "a note says why")
+        XCTAssertTrue(note.label.contains("Try again") || note.label.contains("try again"), note.label)
+        sleep(1)
+        shot("lock-failed")
+        XCTAssertTrue(app.otherElements["lock-screen"].exists, "still locked")
+        XCTAssertTrue(button.isEnabled, "he can try again")
+        button.tap()
+        sleep(1)
+        XCTAssertTrue(app.otherElements["lock-screen"].exists, "still locked after a second try")
+        XCTAssertFalse(studioShows(app))
+    }
+
+    /// The app switcher's picture shows the cover, not Training; a quick trip away doesn't ask to unlock again.
+    func testAppSwitcherCoverAndAQuickTrip() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20))
+        // swipe up from the bottom edge and hold: the app switcher
+        let bottom = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.998))
+        bottom.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.62)),
+                     withVelocity: .slow, thenHoldForDuration: 1.2)
+        sleep(2)
+        shot("app-switcher")
+        // the simulator's own way in, too: home twice, quickly
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+        XCUIDevice.shared.press(.home)
+        usleep(150_000)
+        XCUIDevice.shared.press(.home)
+        sleep(2)
+        shot("app-switcher-2")
+        app.activate()
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 10), "back in Training")
+        XCTAssertFalse(app.buttons["unlock"].exists, "a quick trip away doesn't lock")
+        XCTAssertTrue(studioShows(app))
+    }
+
+    /// With the time away cut to 3 seconds (the test build only): coming back mid-workout never asks; once the
+    /// workout is finished, coming back locks it.
+    func testLocksAfterTimeAwayButNeverMidWorkout() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page, "VIRT_LOCK_AFTER": "3"])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20))
+        web.buttons["Start rest"].tap()
+        allowAlerts()
+        XCTAssertTrue(waitStatus(app, contains: "timer rest:"), status(app))
+
+        XCUIDevice.shared.press(.home)
+        sleep(6)
+        app.activate()
+        XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 10), "mid-workout: straight back in")
+        XCTAssertFalse(app.buttons["unlock"].exists, "no unlock mid-workout")
+
+        web.buttons["Finish"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "timer none"), status(app))
+        XCUIDevice.shared.press(.home)
+        sleep(6)
+        app.activate()
+        let button = app.buttons["unlock"]
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "away long enough with no workout: locked")
+        XCTAssertFalse(studioShows(app))
+        shot("locked-again")
+        button.tap()
+        XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 5), "unlocked: the same page, right where it was")
     }
 
     /// Talks to the app the way studio Training does (docs/kinetic/bridge.md on the website).

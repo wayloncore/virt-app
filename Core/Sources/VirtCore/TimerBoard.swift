@@ -51,6 +51,8 @@ public struct TimerBoard: Equatable, Sendable {
     public var workout: Workout?
     public var countdown: Countdown?
     public var lastMessageAt: Date?
+    /// When a lock-screen or Dynamic Island button was last pressed (a sign the workout is going, for `midWorkout`).
+    public var lastButtonAt: Date?
     /// The last countdown that ran to zero, and when: the next interval phase's bar starts there.
     public var lastEnd: (id: String, at: Date)?
     public var lastSummary: WorkoutSummary?
@@ -58,7 +60,7 @@ public struct TimerBoard: Equatable, Sendable {
     public init() {}
 
     public static func == (a: TimerBoard, b: TimerBoard) -> Bool {
-        a.workout == b.workout && a.countdown == b.countdown && a.lastMessageAt == b.lastMessageAt
+        a.workout == b.workout && a.countdown == b.countdown && a.lastMessageAt == b.lastMessageAt && a.lastButtonAt == b.lastButtonAt
             && a.lastEnd?.id == b.lastEnd?.id && a.lastEnd?.at == b.lastEnd?.at && a.lastSummary == b.lastSummary
     }
 
@@ -152,6 +154,7 @@ public struct TimerBoard: Equatable, Sendable {
     /// page's own answer replaces this when it comes.
     public mutating func apply(_ command: TimerCommand, now: Date) {
         guard var c = countdown else { return }
+        lastButtonAt = now
         switch command {
         case .pause:
             guard !c.paused else { return }
@@ -248,6 +251,19 @@ public struct TimerBoard: Equatable, Sendable {
     public func keepAwake(now: Date) -> Bool {
         if countdown != nil { return true }
         guard workout != nil, let last = lastMessageAt else { return false }
+        return now.timeIntervalSince(last) < Self.quietLimit
+    }
+
+    /// True while a workout is going, so coming back to the app doesn't ask for Face ID (`LockPolicy`): a countdown is
+    /// running and hasn't reached zero, or a workout or timer is up and there's been a sign of it within `quietLimit`
+    /// (a message from the page, a lock-screen button, or a countdown reaching zero). A workout or paused timer left
+    /// open for longer than that doesn't count, so the lock still comes.
+    public func midWorkout(now: Date) -> Bool {
+        if let c = countdown, !c.paused, let e = c.endsAt, e > now { return true }
+        guard workout != nil || countdown != nil else { return false }
+        var signs = [lastMessageAt, lastButtonAt].compactMap { $0 }
+        if let c = countdown, !c.paused, let e = c.endsAt { signs.append(e) }
+        guard let last = signs.max() else { return false }
         return now.timeIntervalSince(last) < Self.quietLimit
     }
 

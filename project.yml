@@ -43,6 +43,8 @@ targets:
         UIRequiresFullScreen: true
         NSCameraUsageDescription: "Virt uses the camera only when you take a photo for a studio page."
         NSPhotoLibraryAddUsageDescription: "Virt saves a picture you share from Training to your photos only when you ask."
+        # the Face ID lock (App/Lock.swift)
+        NSFaceIDUsageDescription: "Virt uses Face ID to keep your training private."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tyleralocke.virt
