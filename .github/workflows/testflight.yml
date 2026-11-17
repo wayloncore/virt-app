@@ -15,6 +15,10 @@ on:
         description: "Only the readiness check (secrets, App IDs, the App Store Connect app); no build"
         required: false
         default: "false"
+      invite:
+        description: "Send the TestFlight invitation email again (use with check_only: true; no build)"
+        required: false
+        default: "false"
   push:
     branches: [main, "claude/**"]
 permissions:
@@ -57,6 +61,9 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py ready || rc=$?
           if [ -n "$rc" ]; then "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py probe || true; fi
           "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py status || true
+          if [ "${{ github.event.inputs.invite }}" = "true" ] && [ -z "$rc" ]; then
+            "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py invite || rc=$?
+          fi
           rm -rf "$RUNNER_TEMP/asc"
           exit ${rc:-0}
 

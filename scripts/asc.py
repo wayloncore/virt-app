@@ -8,6 +8,7 @@ never prints a key.
                              each bundle id
   asc.py wait BUILD          waits until build BUILD of version 1.0 is processed, then turns on internal testing
   asc.py status              lists the app's builds (number, state) for the log
+  asc.py invite              sends the TestFlight invitation email again to the internal group's testers
 
 Reads ASC_KEY_PATH (the .p8 file), ASC_KEY_ID and ASC_ISSUER_ID from the environment.
 
@@ -244,7 +245,12 @@ def status():
 
 
 def internal_testing(app_id):
-    groups = call("GET", f"/v1/apps/{app_id}/betaGroups")["data"]
+    # /v1/apps/{id}/betaGroups stopped listing the internal group on Nov 17 (time2play-app hit it); the filter works
+    groups = call("GET", "/v1/betaGroups" + q({"filter[app]": app_id, "limit": 200,
+                                                 "fields[betaGroups]": "name,isInternalGroup,hasAccessToAllBuilds"}))["data"]
+    for g in groups:
+        a = g["attributes"]
+        print(f"Group: {a.get('name')} (internal: {a.get('isInternalGroup')}, every build: {a.get('hasAccessToAllBuilds')})")
     internal = [g for g in groups if g["attributes"].get("isInternalGroup")]
     if internal:
         group = internal[0]
@@ -276,6 +282,29 @@ def internal_testing(app_id):
             print("Added the Account Holder as an internal tester")
         except SystemExit:
             print("Couldn't add the Account Holder as a tester with this key; add yourself in TestFlight → Internal Testing")
+
+
+def invite():
+    """Send (or send again) the TestFlight invitation email to everyone in the internal group (Tyler, Nov 17)."""
+    app = the_app()
+    internal_testing(app["id"])
+    groups = call("GET", "/v1/betaGroups" + q({"filter[app]": app["id"], "limit": 200}))["data"]
+    sent = 0
+    for g in [g for g in groups if g["attributes"].get("isInternalGroup")]:
+        for t in call("GET", f"/v1/betaGroups/{g['id']}/betaTesters" + q({"limit": 50}))["data"]:
+            email = t["attributes"].get("email") or ""
+            if email:
+                print(f"::add-mask::{email}")
+            try:
+                call("POST", "/v1/betaTesterInvitations", {"data": {"type": "betaTesterInvitations", "relationships": {
+                    "app": {"data": {"type": "apps", "id": app["id"]}},
+                    "betaTester": {"data": {"type": "betaTesters", "id": t["id"]}}}}})
+                sent += 1
+            except SystemExit:
+                print("Apple didn't send this one (the message above says why)")
+    print(f"Invitations sent: {sent}")
+    if not sent:
+        die("No invitation went out; add yourself in App Store Connect -> TestFlight -> Internal Testing")
 
 
 def wait(number, minutes=40):
@@ -313,5 +342,7 @@ if __name__ == "__main__":
         wait(sys.argv[2])
     elif cmd == "status":
         status()
+    elif cmd == "invite":
+        invite()
     else:
         die(__doc__)
