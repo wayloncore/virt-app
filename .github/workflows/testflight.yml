@@ -1,0 +1,191 @@
+# The signed build, uploaded to App Store Connect for TestFlight (adapted from time2play-app's). Start it by hand
+# (Actions -> TestFlight -> Run workflow, or the REST dispatch) or with [testflight] in a pushed commit's message. It
+# never submits anything for App Review.
+#
+# First a quick Linux check (no Mac minutes): the key works, both App IDs are registered (it registers a missing one),
+# and the App Store Connect app exists. `check_only` stops there.
+#
+# Keys: the App Store Connect key is written to a temp file only for each job and deleted at the end. The
+# distribution certificate's key is re-made from it each run (scripts/asc.py), so no signing key is stored anywhere.
+name: TestFlight
+on:
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: "Only the readiness check (secrets, App IDs, the App Store Connect app); no build"
+        required: false
+        default: "false"
+  push:
+    branches: [main, "claude/**"]
+permissions:
+  contents: read
+concurrency:
+  group: testflight-${{ github.event.inputs.check_only == 'true' && 'check' || 'build' }}
+  cancel-in-progress: false
+env:
+  TEAM_ID: 6WK983RXJT
+  BUNDLE_ID: com.tyleralocke.virt
+  TIMER_ID: com.tyleralocke.virt.timer
+jobs:
+  ready:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[testflight]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Secrets present (names only, never values)
+        env:
+          A: ${{ secrets.ASC_ISSUER_ID }}
+          B: ${{ secrets.ASC_KEY_ID }}
+          C: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          missing=0
+          [ -n "$A" ] && echo "ASC_ISSUER_ID: set" || { echo "ASC_ISSUER_ID: missing"; missing=1; }
+          [ -n "$B" ] && echo "ASC_KEY_ID: set" || { echo "ASC_KEY_ID: missing"; missing=1; }
+          [ -n "$C" ] && echo "ASC_KEY_P8: set" || { echo "ASC_KEY_P8: missing"; missing=1; }
+          [ $missing = 0 ] || { echo "::error::Add the missing secrets under Settings -> Secrets and variables -> Actions"; exit 1; }
+      - name: App IDs and the App Store Connect app
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          umask 077; mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/key.p8"
+          export ASC_KEY_PATH="$RUNNER_TEMP/asc/key.p8"
+          python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" -q install cryptography==44.0.2 pyjwt==2.10.1
+          "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py ready || rc=$?
+          "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py status || true
+          rm -rf "$RUNNER_TEMP/asc"
+          exit ${rc:-0}
+
+  upload:
+    needs: ready
+    if: github.event.inputs.check_only != 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    outputs:
+      build: ${{ steps.number.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: number
+        name: Version and build number
+        run: |
+          echo "start=$(date +%s)" >> "$GITHUB_ENV"
+          # The build number rises every run (Apple needs a new one per upload); the version is project.yml's 1.0
+          echo "build=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "BUILD=${{ github.run_number }}" >> "$GITHUB_ENV"
+          X=$(ls -d /Applications/Xcode_26*.app | grep -v -i beta | sort -V | tail -1)
+          [ -n "$X" ] && sudo xcode-select -s "$X"
+          xcodebuild -version
+      - name: The App Store Connect key, into a temp file (never printed)
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/key.p8"
+          grep -q "BEGIN PRIVATE KEY" "$RUNNER_TEMP/asc/key.p8" || { echo "::error::ASC_KEY_P8 isn't the .p8 text"; exit 1; }
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc/key.p8" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" -q install pycryptodome==3.21.0 cryptography==44.0.2 pyjwt==2.10.1
+      - name: Distribution certificate and the two App Store profiles
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py signing "$RUNNER_TEMP/sign"
+          KC="$RUNNER_TEMP/sign/build.keychain-db"; KCP=$(uuidgen)
+          echo "::add-mask::$KCP"
+          security create-keychain -p "$KCP" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KCP" "$KC"
+          curl -fsSL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o "$RUNNER_TEMP/sign/wwdr.cer"
+          security import "$RUNNER_TEMP/sign/wwdr.cer" -k "$KC" -T /usr/bin/codesign || true
+          security import "$RUNNER_TEMP/sign/dist.p12" -k "$KC" -f pkcs12 -P "$(cat "$RUNNER_TEMP/sign/dist.p12.pass")" -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          rm -f "$RUNNER_TEMP/sign/dist.p12" "$RUNNER_TEMP/sign/dist.p12.pass"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCP" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KC" | sed 's/[0-9A-F]\{40\}/<hash>/'
+          # each profile where Xcode looks for it, named by its UUID
+          for p in "$RUNNER_TEMP"/sign/*.mobileprovision; do
+            UUID=$(security cms -D -i "$p" | plutil -extract UUID raw -o - -)
+            echo "Profile $(basename "$p"): $UUID"
+            for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+              mkdir -p "$d"; cp "$p" "$d/$UUID.mobileprovision"
+            done
+          done
+          echo "KEYCHAIN=$KC" >> "$GITHUB_ENV"
+      - name: Generate the Xcode project
+        run: brew install xcodegen >/dev/null && xcodegen generate
+      - name: Archive (signed)
+        run: |
+          t=$(date +%s); set -o pipefail
+          xcodebuild -project Virt.xcodeproj -scheme Virt -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Virt.xcarchive" \
+            VIRT_PROFILE="$VIRT_PROFILE_NAME" VIRT_TIMER_PROFILE="$VIRT_TIMER_PROFILE_NAME" \
+            CURRENT_PROJECT_VERSION="$BUILD" OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN" \
+            archive 2>&1 | grep -E "error:|warning: .*(sign|profile|entitle)|\*\* ARCHIVE|Signing Identity|Provisioning Profile" | tail -40
+          echo "archive_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+          APP="$RUNNER_TEMP/Virt.xcarchive/Products/Applications/Virt.app"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" -c "Print :CFBundleDisplayName" -c "Print :NSSupportsLiveActivities" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" -c "Print :CFBundleVersion" "$APP/PlugIns/VirtTimer.appex/Info.plist"
+      - name: Export and upload to App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          t=$(date +%s); set -o pipefail
+          cat > "$RUNNER_TEMP/export.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key><dict>
+              <key>$BUNDLE_ID</key><string>$VIRT_PROFILE_NAME</string>
+              <key>$TIMER_ID</key><string>$VIRT_TIMER_PROFILE_NAME</string>
+            </dict>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+            <key>testFlightInternalTestingOnly</key><true/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Virt.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/export.plist" -exportPath "$RUNNER_TEMP/export" \
+            -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | grep -v -E "^\s*$" | tail -40
+          echo "upload_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+          echo "Uploaded build $BUILD (version 1.0)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Clean up the keys
+        if: always()
+        run: |
+          [ -n "$KEYCHAIN" ] && security delete-keychain "$KEYCHAIN" || true
+          rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/sign"
+          total=$(( $(date +%s) - start ))
+          echo "TIMING archive=${archive_s:-?} upload=${upload_s:-?} total=$total"
+
+  # Waiting for Apple's processing doesn't need a Mac
+  processing:
+    needs: upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for TestFlight processing, then internal testing
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          umask 077; mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/key.p8"
+          export ASC_KEY_PATH="$RUNNER_TEMP/asc/key.p8"
+          python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" -q install cryptography==44.0.2 pyjwt==2.10.1
+          "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py wait "${{ needs.upload.outputs.build }}" || rc=$?
+          "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py status || true
+          rm -rf "$RUNNER_TEMP/asc"
+          exit ${rc:-0}

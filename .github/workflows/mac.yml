@@ -1,0 +1,108 @@
+# The batched Mac run: VirtCore's tests, the build (app + timer extension), the UI tests in the iPhone simulator, and
+# screenshots printed into the log (a cloud session can read job logs but not artifact downloads). One run per
+# finished piece, not per change: start it by hand (Actions -> Mac build -> Run workflow, or the REST dispatch), or
+# put [mac] in a pushed commit's message.
+name: Mac build
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Run only these UI tests (xcodebuild -only-testing values, space-separated; empty runs them all)"
+        required: false
+        default: ""
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: mac-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  simulator:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[mac]')
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Versions
+        run: |
+          echo "start=$(date +%s)" >> "$GITHUB_ENV"
+          X=$(ls -d /Applications/Xcode_26*.app | grep -v -i beta | sort -V | tail -1)
+          [ -n "$X" ] && sudo xcode-select -s "$X"
+          sw_vers; xcodebuild -version; swift --version
+      - name: VirtCore tests (no UI)
+        run: |
+          t=$(date +%s); set -o pipefail
+          cd Core && swift test 2>&1 | grep -E "error:|failed|Executed|passed|XCTAssert" | tail -30
+          echo "core_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Generate the Xcode project
+        run: brew install xcodegen >/dev/null && xcodegen generate
+      - name: Pick and boot an iPhone simulator (one with a Dynamic Island)
+        run: |
+          t=$(date +%s)
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys,re
+          d=json.load(sys.stdin)["devices"]
+          best=None
+          for rt,devs in d.items():
+              m=re.search(r"iOS-(\d+)-(\d+)",rt)
+              if not m: continue
+              v=(int(m.group(1)),int(m.group(2)))
+              for x in devs:
+                  if re.fullmatch(r"iPhone \d+ Pro",x["name"]):
+                      k=(v,x["name"])
+                      if best is None or k>best[0]: best=(k,x["udid"],x["name"],rt)
+          print(best[1]); print(best[2],best[3],file=sys.stderr)')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b
+          echo "boot_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Build and run the UI tests
+        env:
+          ONLY: ${{ github.event.inputs.only }}
+        run: |
+          t=$(date +%s)
+          set -o pipefail
+          mkdir -p "$HOME/virt-shots"
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          sel=""; for o in $ONLY; do sel="$sel -only-testing:$o"; done
+          xcodebuild -project Virt.xcodeproj -scheme Virt -configuration Debug \
+            -destination "id=$UDID" -derivedDataPath build -resultBundlePath build/ui.xcresult \
+            -parallel-testing-enabled NO $sel \
+            CODE_SIGNING_ALLOWED=NO test 2>&1 | grep -E "Test (Case|Suite)|error:|failed|XCTAssert|\*\* TEST|\*\* BUILD|Executed" | tail -80
+          echo "test_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Why tests failed (the result bundle's failure messages)
+        if: always()
+        run: |
+          [ -d build/ui.xcresult ] || exit 0
+          xcrun xcresulttool get test-results summary --path build/ui.xcresult --format json > summary.json 2>/dev/null || exit 0
+          python3 -c '
+          import json
+          s=json.load(open("summary.json"))
+          print("RESULT", s.get("result"), "passed", s.get("passedTests"), "failed", s.get("failedTests"), "skipped", s.get("skippedTests"))
+          for f in s.get("testFailures", []): print("FAILURE", f.get("testIdentifierString") or f.get("testName"), "::", f.get("failureText"))'
+      - name: Build errors in full (when the build failed)
+        if: failure()
+        run: |
+          [ -d build/ui.xcresult ] || exit 0
+          xcrun xcresulttool get build-results --path build/ui.xcresult --format json 2>/dev/null | python3 -c '
+          import json,sys
+          try: s=json.load(sys.stdin)
+          except Exception: sys.exit(0)
+          for e in s.get("errors", [])[:40]: print("BUILD-ERROR", e.get("sourceURL","").split("/")[-1], "::", e.get("message"))' || true
+      - name: Screenshots into the log
+        if: always()
+        run: |
+          for f in "$HOME"/virt-shots/*.png; do [ -f "$f" ] || continue; echo "BEGIN-SHOT $(basename "$f")"; base64 -i "$f" | fold -w 4000; echo "END-SHOT"; done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mac-shots
+          path: |
+            ~/virt-shots/
+            build/ui.xcresult
+          retention-days: 14
+      - name: Timing
+        if: always()
+        run: |
+          total=$(( $(date +%s) - start ))
+          { echo "## Timing (seconds)"; echo "core tests: ${core_s:-?}, boot: ${boot_s:-?}, build + UI tests: ${test_s:-?}, job steps total: $total"; } >> "$GITHUB_STEP_SUMMARY"
+          echo "TIMING core=${core_s:-?} boot=${boot_s:-?} test=${test_s:-?} total=$total"

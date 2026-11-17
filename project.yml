@@ -1,0 +1,111 @@
+# XcodeGen spec: the Mac workflow turns it into Virt.xcodeproj (the project file isn't kept in git).
+name: Virt
+options:
+  bundleIdPrefix: com.tyleralocke
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  VirtCore:
+    path: Core
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: 6WK983RXJT
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  Virt:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Shared
+    dependencies:
+      - package: VirtCore
+      - target: VirtTimer
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: Virt
+        ITSAppUsesNonExemptEncryption: false
+        # the Live Activity (the timer on the lock screen and in the Dynamic Island)
+        NSSupportsLiveActivities: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UILaunchScreen:
+          UIColorName: LaunchBlack
+          UIImageName: VirtMark
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiresFullScreen: true
+        NSCameraUsageDescription: "Virt uses the camera only when you take a photo for a studio page."
+        NSPhotoLibraryAddUsageDescription: "Virt saves a picture you share from Training to your photos only when you ask."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tyleralocke.virt
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Virt
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      # Release is the signed App Store build (.github/workflows/testflight.yml). It signs by hand with the
+      # distribution certificate and the two App Store profiles the workflow fetches (scripts/asc.py); VIRT_PROFILE is
+      # the app's profile name, passed on the xcodebuild line. The simulator runs use Debug, unsigned.
+      configs:
+        Release:
+          CODE_SIGNING_ALLOWED: YES
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: $(VIRT_PROFILE)
+  VirtTimer:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widget
+      - Shared
+    dependencies:
+      - package: VirtCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    info:
+      path: Widget/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: Virt timer
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tyleralocke.virt.timer
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Virt timer
+        SKIP_INSTALL: YES
+      configs:
+        Release:
+          CODE_SIGNING_ALLOWED: YES
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: $(VIRT_TIMER_PROFILE)
+  VirtUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: Virt
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tyleralocke.virt.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Virt
+schemes:
+  Virt:
+    build:
+      targets:
+        Virt: all
+        VirtUITests: [test]
+    test:
+      targets: [VirtUITests]
