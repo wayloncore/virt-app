@@ -66,20 +66,17 @@ struct LockScreenTimer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(Color.virtGold.opacity(0.8))
                     Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(.white).lineLimit(1)
+                    NextLine(d: d)
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 ClockText(d: d).font(.system(size: 40, weight: .semibold, design: .rounded)).foregroundStyle(Color.virtGold)
             }
             Bar(d: d)
-            HStack {
-                NextLine(d: d)
-                Spacer()
-                Buttons(d: d)
-            }
+            Buttons(d: d).frame(maxWidth: .infinity)
         }
         .padding(16)
     }
