@@ -28,11 +28,11 @@ final class VirtUITests: XCTestCase {
         return false
     }
 
-    /// Seconds to zero, as the status line says ("ends in 87s").
-    func endsIn(_ app: XCUIApplication) -> Int? {
+    /// When the running timer reaches zero, as the status line says ("ends at 1794933871", epoch seconds).
+    func endsAt(_ app: XCUIApplication) -> Int? {
         let t = status(app)
-        guard let r = t.range(of: #"ends in (-?\d+)s"#, options: .regularExpression) else { return nil }
-        return Int(t[r].dropFirst("ends in ".count).dropLast())
+        guard let r = t.range(of: #"ends at \d+"#, options: .regularExpression) else { return nil }
+        return Int(t[r].dropFirst("ends at ".count))
     }
 
     /// Saves a screenshot as <name>.png in ~/virt-shots on the Mac (the workflow prints them into its log).
@@ -90,11 +90,10 @@ final class VirtUITests: XCTestCase {
         shot("bridge-rest")
 
         // a lock-screen button: the app applies it and hands it to the page, which answers with the new end
-        let before = endsIn(app) ?? 0
+        let before = endsAt(app) ?? 0
         app.buttons["dbg-add15"].tap()
         XCTAssertTrue(web.staticTexts["command: add15"].waitForExistence(timeout: 10), "the page got kinetic:command")
-        let after = endsIn(app) ?? 0
-        XCTAssertTrue(after >= before + 10 && after <= before + 15, "+15 moved the end: \(before)s, then \(status(app))")
+        XCTAssertTrue(waitStatus(app, contains: "ends at \(before + 15)", 5), "+15 moved the end 15 s: \(before), then \(status(app))")
         app.buttons["dbg-pause"].tap()
         XCTAssertTrue(web.staticTexts["command: pause"].waitForExistence(timeout: 10))
         XCTAssertTrue(waitStatus(app, contains: "paused"), status(app))

@@ -191,7 +191,7 @@ import VirtCore
         let now = Date()
         var parts: [String] = []
         if let c = board.countdown { parts.append("timer \(c.id) \(c.paused ? "paused" : "running")") } else { parts.append("timer none") }
-        if let e = board.countdown?.endsAt { parts.append("ends in \(Int(e.timeIntervalSince(now).rounded()))s") }
+        if let e = board.countdown?.endsAt { parts.append("ends at \(Int(e.timeIntervalSince1970.rounded()))") }
         parts.append("alerts \(board.alerts(now: now).count)")
         parts.append(board.keepAwake(now: now) ? "awake on" : "awake off")
         parts.append("activity \(activityNote)")
