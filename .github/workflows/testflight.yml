@@ -136,7 +136,7 @@ jobs:
             archive 2>&1 | grep -E "error:|warning: .*(sign|profile|entitle)|\*\* ARCHIVE|Signing Identity|Provisioning Profile" | tail -40
           echo "archive_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
           APP="$RUNNER_TEMP/Virt.xcarchive/Products/Applications/Virt.app"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" -c "Print :CFBundleDisplayName" -c "Print :NSSupportsLiveActivities" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" -c "Print :CFBundleDisplayName" -c "Print :NSSupportsLiveActivities" -c "Print :NSFaceIDUsageDescription" "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" -c "Print :CFBundleVersion" "$APP/PlugIns/VirtTimer.appex/Info.plist"
       - name: Export and upload to App Store Connect
         env:

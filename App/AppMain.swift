@@ -27,6 +27,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
     private var shell: ShellController?
+    /// The Face ID lock (Lock.swift): its window covers this one from the first frame.
+    private let lock = AppLock()
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let ws = scene as? UIWindowScene else { return }
@@ -37,11 +39,22 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         w.makeKeyAndVisible()
         window = w
         shell = s
+        lock.attach(to: ws, over: w)
     }
 
-    func sceneDidBecomeActive(_ scene: UIScene) { Engine.shared.becameActive() }
+    func sceneWillEnterForeground(_ scene: UIScene) { lock.willEnterForeground() }
 
-    func sceneDidEnterBackground(_ scene: UIScene) { shell?.saveSignIn() }
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        lock.didBecomeActive()
+        Engine.shared.becameActive()
+    }
+
+    func sceneWillResignActive(_ scene: UIScene) { lock.willResignActive() }
+
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        lock.didEnterBackground()
+        shell?.saveSignIn()
+    }
 }
 
 /// Keeps the studio's sign-in across launches. Cloudflare Access's sign-in can be a session cookie, which a web view
