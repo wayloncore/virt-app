@@ -69,8 +69,8 @@ public struct TimerBoard: Equatable, Sendable {
         switch message {
         case .workoutStart(let title):
             if workout == nil { workout = Workout(title: title, startedAt: now) } else { workout?.title = title }
-        case .workoutFinish(let summary):
-            lastSummary = summary
+        case .workoutFinish, .workoutClose:
+            if case .workoutFinish(let summary) = message { lastSummary = summary }
             workout = nil
             countdown = nil
             lastEnd = nil

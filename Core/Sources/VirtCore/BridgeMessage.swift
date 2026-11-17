@@ -53,6 +53,8 @@ public struct WorkoutSummary: Equatable, Sendable {
 public enum BridgeMessage: Equatable, Sendable {
     case workoutStart(title: String)
     case workoutFinish(WorkoutSummary)
+    /// The Active Workout closed without saving (an addition asked for in wayloncore/tyleralocke#518).
+    case workoutClose
     /// Also sent with an id that's already running when its end moved (±15, a changed target).
     case timerStart(TimerStart)
     /// `remaining` is nil for a stopwatch hold (nothing to count down to).
@@ -74,6 +76,8 @@ public enum BridgeMessage: Equatable, Sendable {
             let s = raw.summary
             return .workoutFinish(WorkoutSummary(mins: s?.mins.map { Int($0) }, exercises: Int(s?.exercises ?? 0),
                                                  sets: Int(s?.sets ?? 0), steps: Int(s?.steps ?? 0)))
+        case "workout.close":
+            return .workoutClose
         case "timer.start":
             guard let id = raw.id else { return nil }
             let up = (raw.upcoming ?? []).compactMap { s -> Step? in

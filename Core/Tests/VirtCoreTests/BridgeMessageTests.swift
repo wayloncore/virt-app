@@ -11,6 +11,7 @@ final class BridgeMessageTests: XCTestCase {
                        .workoutFinish(WorkoutSummary(mins: 42, exercises: 5, sets: 17, steps: 0)))
         XCTAssertEqual(read(#"{"type":"workout.finish","summary":{"mins":null,"exercises":0,"sets":0,"steps":2}}"#),
                        .workoutFinish(WorkoutSummary(mins: nil, exercises: 0, sets: 0, steps: 2)))
+        XCTAssertEqual(read(#"{"type":"workout.close"}"#), .workoutClose)
     }
 
     func testRestStart() {

@@ -13,12 +13,13 @@ on:
   push:
 permissions:
   contents: read
-concurrency:
-  group: mac-build-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
   simulator:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[mac]')
+    # on the job, not the workflow: a push without [mac] must not cancel a Mac run that's going
+    concurrency:
+      group: mac-build-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: macos-15
     timeout-minutes: 40
     steps:

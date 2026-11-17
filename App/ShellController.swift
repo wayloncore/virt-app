@@ -82,7 +82,6 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
         // the status bar takes the page's color (its theme color, or the color behind the page)
         observers.append(web.observe(\.themeColor, options: [.new]) { [weak self] _, _ in self?.matchStatusBar() })
-        observers.append(web.observe(\.underPageBackgroundColor, options: [.new]) { [weak self] _, _ in self?.matchStatusBar() })
         observers.append(web.observe(\.url, options: [.new]) { [weak self] _, _ in self?.updateStatusLine() })
 
         showSplash()
@@ -117,7 +116,20 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     // MARK: - Looks
 
     private func matchStatusBar() {
-        let c = web.themeColor ?? web.underPageBackgroundColor ?? .virtBlack
+        if let c = web.themeColor { return paintStatusBar(c) }
+        // no theme color (Access's sign-in page): the page's own background
+        web.evaluateJavaScript(Self.backgroundScript) { [weak self] v, _ in
+            guard let self, self.web.themeColor == nil else { return }
+            self.paintStatusBar(UIColor(css: v as? String) ?? .white)
+        }
+    }
+
+    private static let backgroundScript = """
+        (() => { const b = document.body && getComputedStyle(document.body).backgroundColor;
+          return !b || b === 'rgba(0, 0, 0, 0)' ? getComputedStyle(document.documentElement).backgroundColor : b; })()
+        """
+
+    private func paintStatusBar(_ c: UIColor) {
         statusBack.backgroundColor = c
         barStyle = c.isLight ? .darkContent : .lightContent
         setNeedsStatusBarAppearanceUpdate()
@@ -393,6 +405,14 @@ struct OfflineView: View {
 extension UIColor {
     static let virtGold = UIColor(red: 0xDF / 255, green: 0xC2 / 255, blue: 0x97 / 255, alpha: 1)
     static let virtBlack = UIColor(red: 0x0B / 255, green: 0x0A / 255, blue: 0x09 / 255, alpha: 1)
+
+    /// A CSS color as getComputedStyle gives it: "rgb(r, g, b)" or "rgba(r, g, b, a)". nil if it's see-through.
+    convenience init?(css: String?) {
+        guard let css, let open = css.firstIndex(of: "("), let close = css.lastIndex(of: ")") else { return nil }
+        let n = css[css.index(after: open)..<close].split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard n.count >= 3, (n.count < 4 || n[3] > 0.5) else { return nil }
+        self.init(red: n[0] / 255, green: n[1] / 255, blue: n[2] / 255, alpha: 1)
+    }
 
     /// True for a light color (dark status bar text on it).
     var isLight: Bool {

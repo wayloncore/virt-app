@@ -197,6 +197,17 @@ final class TimerBoardTests: XCTestCase {
         XCTAssertTrue(b.keepAwake(now: s(TimerBoard.quietLimit + 500)), "a timer keeps it on")
     }
 
+    func testClosingUnsavedEndsEverything() {
+        var b = TimerBoard()
+        b.apply(.workoutStart(title: "Legs A"), now: s(0))
+        b.apply(rest(0, 45), now: s(0))
+        b.apply(.workoutClose, now: s(5))
+        XCTAssertNil(b.countdown)
+        XCTAssertTrue(b.alerts(now: s(5)).isEmpty)
+        XCTAssertFalse(b.keepAwake(now: s(5)))
+        XCTAssertNil(b.lastSummary)
+    }
+
     func testATimerWithNoWorkoutStartsOne() {
         // the app was opened mid-workout: the page's next timer still turns everything on
         var b = TimerBoard()
