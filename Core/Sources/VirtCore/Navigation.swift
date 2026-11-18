@@ -46,4 +46,26 @@ public enum Navigation {
         guard let host = url?.host?.lowercased() else { return false }
         return host.hasSuffix(".cloudflareaccess.com") || (url?.path.hasPrefix("/cdn-cgi/access") ?? false)
     }
+
+    /// What opening Virt "to today" does (a widget tap, a reminder, Start my workout): Training's front page, unless
+    /// a workout is going (never pull him off it), the sign-in is up (it lands on Training by itself), or nothing has
+    /// loaded yet (the first load is Training already).
+    public enum TodayAction: Equatable, Sendable { case stay, loadHome }
+
+    public static func todayAction(current: URL?, midWorkout: Bool) -> TodayAction {
+        guard let url = current else { return .stay }
+        if isSignIn(url) || midWorkout { return .stay }
+        if isTraining(url) && (url.path == "/training" || url.path == "/training/") { return .stay }
+        return .loadHome
+    }
+
+    /// The domains Virt's web view is bound to (Info.plist WKAppBoundDomains). Being bound is what lets Training's
+    /// service worker run inside the app, so Training keeps working with no signal. Only main-frame pages are
+    /// limited; embedded frames load from anywhere. iOS allows ten.
+    public static let appBoundDomains = [
+        "tyleralocke.com", "studio.tyleralocke.com", "proud-unit-177a.cloudflareaccess.com", "challenges.cloudflare.com",
+        "accounts.google.com", "login.microsoftonline.com", "appleid.apple.com", "github.com",
+        // the UI tests' offline check (a .invalid name never resolves)
+        "virt-offline-check.invalid",
+    ]
 }

@@ -10,8 +10,11 @@ public struct TimerBoard: Equatable, Sendable {
     /// After this long with no message and no timer, a workout the page never finished stops keeping the screen on
     /// (the page was closed without saving, say).
     public static let quietLimit: TimeInterval = 45 * 60
-    /// iOS holds at most 64 pending notifications per app; stay well under.
-    public static let alertLimit = 60
+    /// iOS holds at most 64 pending notifications per app; this leaves room for the week's workout reminders
+    /// (ReminderPlan.daysAhead).
+    public static let alertLimit = 56
+    /// Rests started by Siri, Shortcuts or a quick action before the page has heard (their ids start with this).
+    public static let nativePrefix = "virt-rest:"
 
     public struct Workout: Equatable, Sendable {
         public var title: String
@@ -67,6 +70,8 @@ public struct TimerBoard: Equatable, Sendable {
     // MARK: - The page's messages (the page is the source of truth)
 
     public mutating func apply(_ message: BridgeMessage, now: Date) {
+        // today's plan says nothing about a workout going (the page sends it on every load)
+        if case .today = message { return }
         lastMessageAt = now
         switch message {
         case .workoutStart(let title):
@@ -110,9 +115,27 @@ public struct TimerBoard: Equatable, Sendable {
             guard let c = countdown, c.id == id else { return }
             lastEnd = (id, now)
             countdown = nil
-        case .unknown:
+        case .today, .setLogged, .unknown:
             break
         }
+    }
+
+    // MARK: - A rest started from Siri, Shortcuts or a quick action
+
+    /// Starts a rest right away, so its alert and Live Activity don't wait for the page. When the page starts its own
+    /// rest (it got the `rest` command), that one replaces this one.
+    public mutating func startNativeRest(seconds: Int, now: Date) {
+        let id = Self.nativePrefix + String(Int((now.timeIntervalSince1970 * 1000).rounded()))
+        apply(.timerStart(TimerStart(id: id, kind: .rest, label: "Rest", endsAt: now.addingTimeInterval(TimeInterval(seconds)),
+                                     startedAt: now, next: "")), now: now)
+    }
+
+    /// A rest only Virt knows about ends itself at zero (no page will say so). Returns true if one just ended.
+    @discardableResult
+    public mutating func expireNative(now: Date) -> Bool {
+        guard let c = countdown, c.id.hasPrefix(Self.nativePrefix), !c.paused, let e = c.endsAt, e <= now else { return false }
+        apply(.timerEnd(id: c.id), now: now)
+        return true
     }
 
     private mutating func start(_ s: TimerStart, now: Date) {
@@ -214,12 +237,15 @@ public struct TimerBoard: Equatable, Sendable {
     public func alerts(now: Date) -> [PlannedAlert] {
         guard let c = countdown, !c.paused, let end = c.endsAt else { return [] }
         var out: [PlannedAlert] = []
-        if end > now { out.append(Self.alert(id: c.id, kind: c.kind, label: c.label, next: c.next, at: end)) }
+        if end > now { out.append(Self.alert(id: c.id, kind: c.kind, label: c.label, next: c.next, at: end, length: c.total)) }
+        var before = end
         for (i, u) in c.upcoming.enumerated() {
             let at = end.addingTimeInterval(u.after)
+            defer { before = at }
             guard at > now else { continue }
             let next = i + 1 < c.upcoming.count ? c.upcoming[i + 1].step.label : "Done"
-            out.append(Self.alert(id: u.step.id, kind: u.step.kind, label: u.step.label, next: next, at: at))
+            out.append(Self.alert(id: u.step.id, kind: u.step.kind, label: u.step.label, next: next, at: at,
+                                  length: at.timeIntervalSince(before)))
         }
         return Array(out.prefix(Self.alertLimit))
     }
@@ -272,7 +298,7 @@ public struct TimerBoard: Equatable, Sendable {
 
     // MARK: - Alert wording
 
-    static func alert(id: String, kind: TimerKind, label: String, next: String, at: Date) -> PlannedAlert {
+    static func alert(id: String, kind: TimerKind, label: String, next: String, at: Date, length: TimeInterval? = nil) -> PlannedAlert {
         let title: String
         switch kind {
         case .rest: title = "Rest is over"
@@ -287,6 +313,7 @@ public struct TimerBoard: Equatable, Sendable {
         case "Logged at the time": body = "Set logged"
         default: body = "Up next: \(next)"
         }
-        return PlannedAlert(identifier: "virt.timer.\(id)", fireAt: at, title: title, body: body)
+        return PlannedAlert(identifier: "virt.timer.\(id)", fireAt: at, title: title, body: body,
+                            cue: SoundCue.zero(after: kind), length: length)
     }
 }
