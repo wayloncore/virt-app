@@ -1,122 +1,218 @@
+import AVFoundation
 import SwiftUI
+import UIKit
+import VirtCore
 
-/// The intro on a fresh launch (Tyler's idea, Nov 17): the launch screen's gold V moves left as "VIRT" forms around
-/// it, the I, R and T fade, and the V glides back to the center, settling exactly where the lock screen's V sits.
-/// About 1.2 seconds. Face ID asks while it plays, so it adds no waiting; a tap skips it; with Reduce Motion it's a
-/// plain cross-fade. It only ever plays on a fresh launch (AppLock).
+/// The video intro (Tyler's Kling clips, Nov 18; App/Intro/, made by scripts/intro_video.py). It replaces the drawn
+/// wordmark intro of Nov 17. The order of events is VirtCore's `IntroFlow`; this plays it:
 ///
-/// The V is the app's own mark (the same image as the launch and lock screens, so the hand-off is seamless). The I,
-/// R and T are vector paths drawn in the mark's style: a thin capped stroke above a thick one, 12 units apart, with
-/// the V's slant on every cut end.
-struct IntroView: View {
-    /// The lock screen's V: 120 points square, centered.
-    static let markSize: CGFloat = 120
-    static let length: TimeInterval = 1.2
+/// - the launch clip (VIRT, the I, R and T wipe away, the V grows; about 3.5 s) on a fresh launch, while Face ID asks;
+/// - the lock screen: the launch clip's last frame (VirtLock.png is that exact frame, so the V never jumps);
+/// - the unlock clip (the camera flies into the V until it's black; about 1.7 s) when Face ID says yes.
+///
+/// Both clips are 1080 x 1920 on pure black and are drawn the same way as the still (fit to the screen's width,
+/// centered), so they line up exactly. No sound: the clips have no audio track and the players are muted. With
+/// Reduce Motion nothing plays: the still fades in, and unlocking fades straight to Training.
+@MainActor final class IntroPlayback {
+    /// The lock screen's V: the launch clip's last frame.
+    static let still = UIImage(named: "VirtLock")
+    /// How long the window takes to fade into Training after the unlock clip (or straight away with Reduce Motion).
+    static let fadeToTraining: TimeInterval = 0.3
 
-    /// Seconds into the intro to hold still at (the test build's frames); nil plays it.
-    var frozenAt: TimeInterval?
-    var reduceMotion: Bool
-    var start: Date
+    let view = IntroStageView()
+    var onLaunchEnded: (() -> Void)?
+    var onUnlockEnded: (() -> Void)?
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: nil, paused: frozenAt != nil)) { context in
-            let t = frozenAt ?? context.date.timeIntervalSince(start)
-            frame(at: t)
-        }
-    }
+    private let launch: AVPlayer?
+    private let unlock: AVPlayer?
+    private var launchEnd: CMTime = .invalid
+    private var launchStarted = false
+    private var unlockStarted = false
+    private var readyWatch: NSKeyValueObservation?
 
-    /// The whole word, in the mark's units (the 360-unit square the V's image is drawn in): the V's image box is
-    /// 0...360, and its gold runs from 34 to 325. The letters follow, 30 units apart.
-    static let letters: [(name: String, x: CGFloat)] = [("I", 355), ("R", 471), ("T", 681)]
-    static let wordLeft: CGFloat = 34, wordRight: CGFloat = 857
-    /// Points per unit at the lock screen's size.
-    static let unit = markSize / 360
-    /// Where the V's box sits (from center) while the word is up, so the whole word is centered.
-    static let wordOffset = -((wordLeft + wordRight) / 2 - 180) * unit
-
-    @ViewBuilder
-    func frame(at t: TimeInterval) -> some View {
-        let p = Self.phase(at: t, reduceMotion: reduceMotion)
-        ZStack {
-            // the word, with its V
-            ZStack {
-                ForEach(Self.letters, id: \.name) { l in
-                    LetterShape(letter: l.name)
-                        .fill(Self.gold)
-                        .overlay(LetterShape(letter: l.name).stroke(Self.edge, lineWidth: 0.6))
-                        .frame(width: Self.markSize, height: Self.markSize)
-                        .offset(x: (l.x - 0) * Self.unit)
-                        .opacity(p.letters)
-                }
-                Image("VirtMark").resizable().scaledToFit().frame(width: Self.markSize, height: Self.markSize)
-                    .opacity(p.wordV)
+    init() {
+        launch = Self.player("virt-launch")
+        unlock = Self.player("virt-unlock")
+        view.launchLayer.player = launch
+        view.unlockLayer.player = unlock
+        view.still.image = Self.still
+        if let item = launch?.currentItem {
+            NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.onLaunchEnded?() }
             }
-            .offset(x: p.vOffset)
-            // the centered V (the launch screen's and the lock screen's); in motion it's the same V as above
-            Image("VirtMark").resizable().scaledToFit().frame(width: Self.markSize, height: Self.markSize)
-                .opacity(p.centerV)
+            Task { [weak self] in
+                guard let d = try? await item.asset.load(.duration) else { return }
+                // the last frame starts 1/60 s before the end; a seek just inside it shows that frame
+                self?.launchEnd = CMTimeSubtract(d, CMTime(value: 1, timescale: 120))
+            }
         }
-        .accessibilityHidden(true)
-    }
-
-    struct Phase: Equatable {
-        var vOffset: CGFloat
-        var letters: Double
-        var wordV: Double
-        var centerV: Double
-    }
-
-    static func ease(_ x: Double) -> Double { let c = min(1, max(0, x)); return c * c * (3 - 2 * c) }
-
-    /// The intro at `t` seconds. Moving: the V slides left (0 to 0.3 s) as the letters fade in, holds, the letters
-    /// fade (0.6 to 0.85 s), and the V glides back (0.75 to 1.2 s). Reduce Motion: the centered V and the word
-    /// cross-fade in place.
-    static func phase(at t: TimeInterval, reduceMotion: Bool) -> Phase {
-        if reduceMotion {
-            let into = ease(t / 0.3) - ease((t - 0.75) / 0.3)
-            return Phase(vOffset: wordOffset, letters: into, wordV: into, centerV: 1 - into)
+        if let item = unlock?.currentItem {
+            NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.onUnlockEnded?() }
+            }
         }
-        let out = ease(t / 0.3) * (1 - ease((t - 0.75) / 0.45))
-        let letters = ease((t - 0.05) / 0.25) * (1 - ease((t - 0.6) / 0.25))
-        return Phase(vOffset: wordOffset * out, letters: letters, wordV: 1, centerV: 0)
     }
 
-    static let gold = LinearGradient(colors: [Color(red: 0.95, green: 0.84, blue: 0.67), Color(red: 0.91, green: 0.79, blue: 0.62),
-                                              Color(red: 0.85, green: 0.73, blue: 0.55)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing)
-    static let edge = Color(red: 0.55, green: 0.45, blue: 0.31).opacity(0.55)
+    private static func player(_ name: String) -> AVPlayer? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "mp4") else { return nil }
+        let p = AVPlayer(playerItem: AVPlayerItem(url: url))
+        p.isMuted = true
+        p.actionAtItemEnd = .pause   // holds the last frame
+        p.preventsDisplaySleepDuringVideoPlayback = false
+        p.allowsExternalPlayback = false
+        return p
+    }
+
+    // MARK: - The launch clip
+
+    /// Plays the launch clip from the start (or, in the test build, holds it still `frozenAt` seconds in).
+    func playLaunch(frozenAt: TimeInterval? = nil) {
+        guard let launch else { return onLaunchEnded?() ?? () }
+        launchStarted = true
+        view.show(still: false, launch: true, unlock: false)
+        if let t = frozenAt {
+            launch.pause()
+            launch.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        } else {
+            launch.seek(to: .zero)
+            launch.play()
+        }
+    }
+
+    /// Face ID said yes partway through: the rest of the V landing, quickly.
+    func hurryLaunch() {
+        guard let launch, launchStarted else { return onLaunchEnded?() ?? () }
+        launch.rate = launch.currentItem?.canPlayFastForward == false ? 2 : IntroFlow.hurryRate
+    }
+
+    /// A tap: straight to the launch clip's last frame, which is the lock screen.
+    func skipLaunch() {
+        guard let launch, launchStarted else { return }
+        launch.pause()
+        if launchEnd.isValid {
+            launch.seek(to: launchEnd, toleranceBefore: .zero, toleranceAfter: .zero)
+        } else {
+            // not loaded yet: the still is the same frame
+            view.show(still: true, launch: false, unlock: false)
+        }
+    }
+
+    /// The launch clip is over: it holds its last frame (the still is the same frame, underneath).
+    func holdLaunchEnd() {
+        view.show(still: true, launch: launchStarted, unlock: false)
+    }
+
+    // MARK: - The unlock clip
+
+    /// Plays the unlock clip (or, in the test build, holds it still `frozenAt` seconds in). Its first frame is the
+    /// lock screen's own, so it can start over the V without a jump; its layer shows once that frame is ready.
+    func playUnlock(frozenAt: TimeInterval? = nil) {
+        guard let unlock else { return onUnlockEnded?() ?? () }
+        launch?.pause()
+        unlockStarted = true
+        let start = { [weak self] in
+            guard let self, self.unlockStarted else { return }
+            self.view.show(still: true, launch: self.launchStarted, unlock: true)
+        }
+        if view.unlockLayer.isReadyForDisplay {
+            start()
+        } else {
+            readyWatch = view.unlockLayer.observe(\.isReadyForDisplay, options: [.new]) { layer, _ in
+                guard layer.isReadyForDisplay else { return }
+                DispatchQueue.main.async { start() }
+            }
+            // never left waiting: its first frame is the still's own, so showing it a moment early can't jump
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { start() }
+        }
+        if let t = frozenAt {
+            unlock.pause()
+            unlock.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        } else {
+            unlock.seek(to: .zero)
+            unlock.play()
+        }
+    }
+
+    // MARK: - The still
+
+    /// The lock screen's V alone, with nothing playing: locked again after time away, the app switcher's cover, or
+    /// after the app went to the background mid-clip. Each clip starts over from its beginning next time.
+    func showStill(animated: Bool = false) {
+        launch?.pause()
+        unlock?.pause()
+        readyWatch = nil
+        launchStarted = false
+        unlockStarted = false
+        view.show(still: true, launch: false, unlock: false)
+        if animated {
+            view.still.alpha = 0
+            UIView.animate(withDuration: 0.4) { self.view.still.alpha = 1 }
+        }
+        unlock?.seek(to: .zero)
+    }
 }
 
-/// One letter of the wordmark, as polygons in the mark's 360-unit square (each letter drawn from its own left edge
-/// at 0; the view offsets it into place). Heights match the V: the thin capped strokes run from 69 to 98, the thick
-/// strokes from 110 to 300, and every cut end leans like the V's arms (16 across for 29 down).
-struct LetterShape: Shape {
-    let letter: String
+/// The intro's picture: the still, then the launch clip over it, then the unlock clip over that, all the full screen,
+/// fit to its width and centered, on pure black.
+final class IntroStageView: UIView {
+    let still = UIImageView()
+    let launchLayer = AVPlayerLayer()
+    let unlockLayer = AVPlayerLayer()
 
-    static let polygons: [String: [[CGPoint]]] = {
-        func p(_ pts: [(CGFloat, CGFloat)]) -> [CGPoint] { pts.map { CGPoint(x: $0.0, y: $0.1) } }
-        return [
-            // I: a cap, the stem, a foot
-            "I": [p([(0, 69), (86, 69), (70, 98), (16, 98)]),
-                  p([(22, 110), (64, 110), (64, 259), (22, 259)]),
-                  p([(16, 271), (70, 271), (86, 300), (0, 300)])],
-            // R: the stem; the cap running into an angular bowl; the leg at the V's slant
-            "R": [p([(0, 110), (42, 110), (42, 300), (0, 300)]),
-                  p([(0, 69), (130, 69), (176, 145), (130, 221), (54, 221), (54, 192), (114, 192), (143, 145), (114, 98), (16, 98)]),
-                  p([(92, 233), (134, 233), (180, 300), (138, 300)])],
-            // T: a wide cap over the stem
-            "T": [p([(0, 69), (176, 69), (160, 98), (16, 98)]),
-                  p([(67, 110), (109, 110), (109, 300), (67, 300)])],
-        ]
-    }()
-
-    func path(in rect: CGRect) -> Path {
-        let s = rect.width / 360
-        var path = Path()
-        for poly in Self.polygons[letter] ?? [] {
-            path.addLines(poly.map { CGPoint(x: rect.minX + $0.x * s, y: rect.minY + $0.y * s) })
-            path.closeSubpath()
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .lockBlack
+        isUserInteractionEnabled = false
+        still.contentMode = .scaleAspectFit
+        still.isHidden = true
+        addSubview(still)
+        // the player layers switch by opacity, not isHidden: a hidden player layer may never get its first frame ready
+        for l in [launchLayer, unlockLayer] {
+            l.videoGravity = .resizeAspect
+            l.backgroundColor = UIColor.clear.cgColor
+            l.opacity = 0
+            layer.addSublayer(l)
         }
-        return path
+        isAccessibilityElement = false
+        accessibilityElementsHidden = true
     }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        still.frame = bounds
+        launchLayer.frame = bounds
+        unlockLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    func show(still s: Bool, launch: Bool, unlock: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        still.isHidden = !s
+        still.alpha = 1
+        launchLayer.opacity = launch ? 1 : 0
+        unlockLayer.opacity = unlock ? 1 : 0
+        CATransaction.commit()
+    }
+}
+
+/// The intro's picture in the lock screen's SwiftUI view.
+struct IntroStage: UIViewRepresentable {
+    let playback: IntroPlayback
+    func makeUIView(context: Context) -> IntroStageView { playback.view }
+    func updateUIView(_ uiView: IntroStageView, context: Context) {}
+}
+
+extension UIColor {
+    /// The launch screen, the intro and the lock screen: pure black, to match the clips. The rest of the app keeps
+    /// `virtBlack`.
+    static let lockBlack = UIColor.black
+}
+
+extension Color {
+    static let lockBlack = Color.black
 }

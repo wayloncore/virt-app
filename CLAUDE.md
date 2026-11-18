@@ -28,7 +28,12 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
 - `App/Intents.swift`: Siri, Shortcuts and the Action button (Start my workout; Start a rest timer). `App/Reminders.swift`:
   training-day reminders. `App/Sound.swift` and `App/Sounds/`: the sounds (`LICENSES.md` says where each came from;
   `.github/workflows/sounds.yml` and `scripts/sounds.py` make them). `App/SettingsView.swift`: Virt's own settings and
-  tips sheet. `App/Intro.swift`: the intro on a fresh launch.
+  tips sheet. `App/Intro.swift`: the video intro and the Face ID lock screen's picture (VirtCore's `IntroFlow` is
+  its order of events): the launch clip plays on a fresh launch while Face ID asks and ends on the large V, which is
+  the lock screen (`App/Intro/VirtLock.png` is the clip's exact last frame); Face ID's yes plays the unlock clip into
+  black, then Training fades in. No sound; with Reduce Motion, no video. The clips in `App/Intro/` are made from
+  Tyler's Kling clips by `scripts/intro_video.py` (trims and speeds are in its comments); the launch screen, the intro
+  and the lock screen are pure black (#000), the rest of the app keeps its own black.
 - The web view is bound to the studio's domains (Info.plist `WKAppBoundDomains`, the same list as
   `Navigation.appBoundDomains`), which is what lets Training's service worker run in the app. A main-frame page outside
   them opens in Safari.
