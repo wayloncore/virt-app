@@ -20,7 +20,7 @@ starts on the lock screen's own frame and blends into the clip over a short hold
 exponentially (1.8x speeding up to 3.6x; Tyler: "exponential so it's not so slow"), and it ends on black. It's drawn
 on a taller canvas (1080 x 2400, taller than any iPhone screen) with a gentle extra zoom (1x to 1.25x over its first
 0.8 s of zoom, before the V reaches the old frame's top and bottom): its first frame is the lock screen's exactly
-(the app fits both to the screen's width, so the extra height is off screen), and as the camera flies in the gold
+(the app scales both by the screen's width, so the extra height is off screen), and as the camera flies in the gold
 runs off the real screen edges instead of stopping at the 9:16 clip's edges.
 
 Speeding a 24 fps clip up by uneven amounts skips frames unevenly, which judders. So both clips are first smoothed to
@@ -115,9 +115,11 @@ def clean(a):
 
 
 def encode(frames, path, height=H):
+    # level 4.2 covers 1080 x 1920 at 60 fps; the taller unlock canvas needs 5.1
+    level = "4.2" if height <= H else "5.1"
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{height}", "-r", str(OUT_FPS),
            "-i", "-", "-an", "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p",
-           "-c:v", "libx264", "-preset", "veryslow", "-crf", "17", "-profile:v", "high", "-level", "4.2",
+           "-c:v", "libx264", "-preset", "veryslow", "-crf", "17", "-profile:v", "high", "-level", level,
            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
            "-movflags", "+faststart", path]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)

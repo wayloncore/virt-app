@@ -31,6 +31,13 @@ import VirtCore
     private var launchStarted = false
     private var unlockStarted = false
     private var readyWatch: NSKeyValueObservation?
+    private var statusWatches: [NSKeyValueObservation] = []
+    /// Each clip's safety net: if a clip fails or never says it reached its end, it counts as ended a moment after it
+    /// should have, so the lock window can never be left stuck on a clip. A new play or a stop cancels the old one.
+    private var launchToken = 0
+    private var unlockToken = 0
+    static let launchLength: TimeInterval = 3.5
+    static let unlockLength: TimeInterval = 1.6
 
     init() {
         launch = Self.player("virt-launch")
@@ -52,6 +59,36 @@ import VirtCore
             NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.onUnlockEnded?() }
             }
+        }
+        // a clip that can't play counts as ended at once
+        for (item, isLaunch) in [(launch?.currentItem, true), (unlock?.currentItem, false)] {
+            guard let item else { continue }
+            statusWatches.append(item.observe(\.status, options: [.new]) { [weak self] item, _ in
+                guard item.status == .failed else { return }
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if isLaunch, self.launchStarted { self.onLaunchEnded?() }
+                    if !isLaunch, self.unlockStarted { self.onUnlockEnded?() }
+                }
+            })
+        }
+    }
+
+    private func launchSafetyNet(after seconds: TimeInterval) {
+        launchToken += 1
+        let token = launchToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self, self.launchToken == token, self.launchStarted else { return }
+            self.onLaunchEnded?()
+        }
+    }
+
+    private func unlockSafetyNet(after seconds: TimeInterval) {
+        unlockToken += 1
+        let token = unlockToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self, self.unlockToken == token, self.unlockStarted else { return }
+            self.onUnlockEnded?()
         }
     }
 
@@ -79,18 +116,23 @@ import VirtCore
         } else {
             launch.seek(to: .zero)
             launch.playImmediately(atRate: rate)
+            launchSafetyNet(after: Self.launchLength / Double(rate) + 1.5)
         }
     }
 
     /// Face ID said yes partway through: the rest of the V landing, quickly.
     func hurryLaunch() {
         guard let launch, launchStarted else { return onLaunchEnded?() ?? () }
-        launch.rate = launch.currentItem?.canPlayFastForward == false ? 2 : IntroFlow.hurryRate
+        let rate = launch.currentItem?.canPlayFastForward == false ? 2 : IntroFlow.hurryRate
+        launch.rate = rate
+        let left = max(0, Self.launchLength - launch.currentTime().seconds)
+        launchSafetyNet(after: left / Double(rate) + 1.0)
     }
 
     /// A tap: straight to the launch clip's last frame, which is the lock screen.
     func skipLaunch() {
         guard let launch, launchStarted else { return }
+        launchToken += 1
         launch.pause()
         if launchEnd.isValid {
             launch.seek(to: launchEnd, toleranceBefore: .zero, toleranceAfter: .zero)
@@ -133,6 +175,7 @@ import VirtCore
         } else {
             unlock.seek(to: .zero)
             unlock.play()
+            unlockSafetyNet(after: Self.unlockLength + 1.5)
         }
     }
 
@@ -144,6 +187,8 @@ import VirtCore
         launch?.pause()
         unlock?.pause()
         readyWatch = nil
+        launchToken += 1
+        unlockToken += 1
         launchStarted = false
         unlockStarted = false
         view.show(still: true, launch: false, unlock: false)
@@ -171,11 +216,15 @@ final class IntroStageView: UIView {
         addSubview(still)
         // the player layers switch by opacity, not isHidden: a hidden player layer may never get its first frame ready
         for l in [launchLayer, unlockLayer] {
-            l.videoGravity = .resizeAspect
             l.backgroundColor = UIColor.clear.cgColor
             l.opacity = 0
             layer.addSublayer(l)
         }
+        // the launch clip (9:16) fits the screen's width like the still. The unlock clip's canvas is taller than any
+        // iPhone screen, so filling the screen also scales it by the width: the same size as the still, with the
+        // extra height off screen.
+        launchLayer.videoGravity = .resizeAspect
+        unlockLayer.videoGravity = .resizeAspectFill
         isAccessibilityElement = false
         accessibilityElementsHidden = true
     }
