@@ -72,7 +72,20 @@ public enum BridgeMessage: Equatable, Sendable {
 
     /// Reads one message from its JSON. nil if it isn't a message at all (no `type`, or a timer message with no `id`).
     public static func decode(_ data: Data) -> BridgeMessage? {
-        guard let raw = try? JSONDecoder().decode(Raw.self, from: data), let type = raw.type else { return nil }
+        guard let type = (try? JSONDecoder().decode(TypeOnly.self, from: data))?.type else { return nil }
+        switch type {
+        case "today":
+            // the fields at the top level, as planned; a nested `today` object reads too. Read on their own, so a
+            // field of an unexpected type is skipped instead of losing the message.
+            let nested = (try? JSONDecoder().decode(Nested.self, from: data))?.today
+            let t = nested ?? (try? JSONDecoder().decode(RawToday.self, from: data)) ?? RawToday()
+            return .today(t.info)
+        case "set.logged":
+            return .setLogged
+        default:
+            break
+        }
+        guard let raw = try? JSONDecoder().decode(Raw.self, from: data) else { return nil }
         let date = { (ms: Double?) in ms.map { Date(timeIntervalSince1970: $0 / 1000) } }
         switch type {
         case "workout.start":
@@ -104,13 +117,6 @@ public enum BridgeMessage: Equatable, Sendable {
         case "timer.end":
             guard let id = raw.id else { return nil }
             return .timerEnd(id: id)
-        case "today":
-            // the fields at the top level, as planned; a nested `today` object reads too
-            let nested = (try? JSONDecoder().decode(Nested.self, from: data))?.today
-            let t = nested ?? (try? JSONDecoder().decode(RawToday.self, from: data)) ?? RawToday()
-            return .today(t.info)
-        case "set.logged":
-            return .setLogged
         default:
             return .unknown(type: type)
         }
@@ -141,6 +147,7 @@ public enum BridgeMessage: Equatable, Sendable {
     private struct Summary: Decodable { var mins: Double?; var exercises: Double?; var sets: Double?; var steps: Double? }
     private struct RawStep: Decodable { var id: String?; var kind: String?; var label: String?; var endsAt: Double? }
     private struct Nested: Decodable { var today: RawToday? }
+    private struct TypeOnly: Decodable { var type: String? }
 
     /// `today`, read leniently: a field of the wrong type is skipped instead of losing the whole message.
     private struct RawToday: Decodable {
