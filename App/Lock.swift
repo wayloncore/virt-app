@@ -199,7 +199,6 @@ struct LockView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { lock.endIntro() } }
                     .ignoresSafeArea()
-                    .accessibilityIdentifier("intro")
             } else {
                 // centered on the whole screen, exactly where the launch screen puts it
                 Image("VirtMark").resizable().scaledToFit().frame(width: IntroView.markSize, height: IntroView.markSize)

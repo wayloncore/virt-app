@@ -85,7 +85,6 @@ struct SettingsView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", action: done).accessibilityIdentifier("settings-done") } }
         }
         .tint(.virtGold)
-        .accessibilityIdentifier("settings")
         .task {
             let s = await UNUserNotificationCenter.current().notificationSettings()
             alertsDenied = s.authorizationStatus == .denied
@@ -113,7 +112,7 @@ enum ReminderCopy {
         let days = t?.trainingDays.map(TodayInfo.daysLine) ?? ""
         let when: String
         switch (time, days.isEmpty) {
-        case (let time?, false): when = "at \(time) on \(days)"
+        case (let time?, false): when = days == "every day" ? "at \(time) every day" : "at \(time) on \(days)"
         case (let time?, true): when = "at \(time) on your training days"
         case (nil, false): when = "on \(days), at your usual time once Training knows it"
         default: when = "on your training days, at your usual time once Training knows it"
@@ -154,6 +153,5 @@ struct ReminderAskView: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.virtBlack)
-        .accessibilityIdentifier("reminder-ask")
     }
 }

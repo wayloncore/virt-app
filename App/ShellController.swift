@@ -54,16 +54,20 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.applicationNameForUserAgent = "Virt/1.0"
-        config.userContentController.add(BridgeHandler(), name: "kinetic")  // the website looks for exactly this name
-        config.userContentController.addUserScript(WKUserScript(source: Self.startScript, injectionTime: .atDocumentStart,
-                                                                forMainFrameOnly: true))
+        var bound = true
+        #if DEBUG
+        // the offline check's made-up start page (localhost) isn't one of the studio's domains: that test loads it
+        // unbound, with no bridge (WebKit allows the bridge only on bound domains)
+        if ProcessInfo.processInfo.environment["VIRT_START_URL"] != nil { bound = false }
+        #endif
+        if bound {
+            config.userContentController.add(BridgeHandler(), name: "kinetic")  // the website looks for exactly this name
+            config.userContentController.addUserScript(WKUserScript(source: Self.startScript, injectionTime: .atDocumentStart,
+                                                                    forMainFrameOnly: true))
+        }
         // bound to the studio's domains (Info.plist WKAppBoundDomains): that's what lets Training's service worker
         // run in the app, so it keeps working with no signal. Other sites already open in Safari (Navigation).
-        config.limitsNavigationsToAppBoundDomains = true
-        #if DEBUG
-        // the offline check's made-up start page (localhost) loads unbound, so its failure reaches the delegate
-        if ProcessInfo.processInfo.environment["VIRT_START_URL"] != nil { config.limitsNavigationsToAppBoundDomains = false }
-        #endif
+        config.limitsNavigationsToAppBoundDomains = bound
 
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
