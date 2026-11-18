@@ -303,6 +303,9 @@ import WidgetKit
         }
     }
 
+    /// The intro's stages so far this launch, for the test build's status line (AppLock records them; never saved).
+    var introSeen: [String] = []
+
     /// One line for the test build: the timer, alerts, screen and activity.
     var status: String {
         let now = Date()
@@ -319,6 +322,7 @@ import WidgetKit
         parts.append("taps \(lightTaps)")
         parts.append("sound \(SoundBoard.shared.last)")
         parts.append("sent \(sentCommands.isEmpty ? "none" : sentCommands.joined(separator: ","))")
+        parts.append("intro \(introSeen.joined(separator: ">"))")
         return parts.joined(separator: " · ")
     }
 }
