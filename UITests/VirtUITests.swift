@@ -226,9 +226,9 @@ final class VirtUITests: XCTestCase {
     func testIntroFrames() {
         let frames: [(String, [String: String])] = [
             ("intro-1-start", ["VIRT_INTRO_AT": "0.3"]),
-            ("intro-2-word", ["VIRT_INTRO_AT": "1.0"]),
-            ("intro-3-midwipe", ["VIRT_INTRO_AT": "1.8"]),
-            ("intro-4-growing", ["VIRT_INTRO_AT": "2.45"]),
+            ("intro-2-word", ["VIRT_INTRO_AT": "1.5"]),
+            ("intro-3-midwipe", ["VIRT_INTRO_AT": "2.3"]),
+            ("intro-4-growing", ["VIRT_INTRO_AT": "2.95"]),
             ("intro-5-end", ["VIRT_INTRO_AT": "\(Self.launchLastFrame)"]),
             ("intro-6-still", ["VIRT_INTRO": "off"]),
             ("unlock-1-start", ["VIRT_UNLOCK_AT": "0"]),
@@ -324,7 +324,7 @@ final class VirtUITests: XCTestCase {
     }
 
     /// The launch clip's last frame (seconds in): VIRT_INTRO_AT for the end of the clip. App/Intro/virt-launch.mp4.
-    static let launchLastFrame = 3.49
+    static let launchLastFrame = 3.99
 
     // MARK: - The Face ID lock
 

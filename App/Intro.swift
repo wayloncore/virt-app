@@ -6,7 +6,7 @@ import VirtCore
 /// The video intro (Tyler's Kling clips, Nov 18; App/Intro/, made by scripts/intro_video.py). It replaces the drawn
 /// wordmark intro of Nov 17. The order of events is VirtCore's `IntroFlow`; this plays it:
 ///
-/// - the launch clip (VIRT, the I, R and T wipe away, the V grows; about 3.5 s) on a fresh launch, while Face ID asks;
+/// - the launch clip (VIRT, the I, R and T wipe away, the V grows; about 4 s) on a fresh launch, while Face ID asks;
 /// - the lock screen: the launch clip's last frame (VirtLock.png is that exact frame, so the V never jumps);
 /// - the unlock clip (the camera flies into the V until it's black; about 1.7 s) when Face ID says yes.
 ///
@@ -36,7 +36,7 @@ import VirtCore
     /// should have, so the lock window can never be left stuck on a clip. A new play or a stop cancels the old one.
     private var launchToken = 0
     private var unlockToken = 0
-    static let launchLength: TimeInterval = 3.5
+    static let launchLength: TimeInterval = 4.0
     static let unlockLength: TimeInterval = 1.6
 
     init() {

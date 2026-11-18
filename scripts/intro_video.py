@@ -10,7 +10,8 @@ Nov 18, 2026 clips).
 
 The launch clip (1080 x 1920, 24 fps, 5.0 s): VIRT holds with a light sweeping across it (0.67 to 1.83 s), the I, R
 and T wipe away (2.0 to 2.71 s), the V grows to its final size (2.71 to 3.71 s), then a slow push-in to 5.0 s. Kept:
-from 0.55 s (just before the sweep), with a short fade in from the black launch screen; the wipe at normal speed; the
+from 0.05 s (the word holds about 0.6 s before the sweep; Tyler, Nov 18: "it takes away the word too fast"), with a
+short fade in from the black launch screen; the wipe at normal speed; the
 V growing 1.25x faster (Tyler: "a little faster"); and the slow push-in squeezed into an ease-out, so it still ends on
 the clip's own last frame. That last frame is the lock screen's V (VirtLock.png is that exact frame, decoded).
 
@@ -145,7 +146,7 @@ def last_frame(path):
 
 
 # The launch clip's timing (seconds in the original clip)
-HOLD = (0.55, 2.00)      # the word, with the light sweeping across it (1x)
+HOLD = (0.05, 2.00)      # the word, then the light sweeping across it (1x, real frames)
 WIPE = (2.00, 2.71)      # the I, R and T wipe away (1x)
 GROW = (2.71, 3.71)      # the V grows (1.25x: "a little faster"), to where it has slowed almost to rest
 DRIFT = (3.71, 5.00)     # the slow push-in, squeezed into an ease-out from 5x to rest
@@ -239,7 +240,7 @@ def main():
         sys.exit(__doc__)
     os.makedirs(OUT, exist_ok=True)
 
-    src = Source(sys.argv[1], HOLD[0] - 0.1, 5.1)
+    src = Source(sys.argv[1], max(0.0, HOLD[0] - 0.1), 5.1)
     launch = os.path.join(OUT, "virt-launch.mp4")
     n = encode(launch_frames(src), launch)
     src.close()
