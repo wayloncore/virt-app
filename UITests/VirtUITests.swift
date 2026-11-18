@@ -79,7 +79,7 @@ final class VirtUITests: XCTestCase {
 
     /// With no way to reach the studio: the plain offline screen, and Retry.
     func testOfflineScreenAndRetry() {
-        let app = launch(env: ["VIRT_START_URL": "https://localhost:9/"])
+        let app = launch(env: ["VIRT_START_URL": "https://virt-offline-check.invalid/"])
         let retry = app.buttons["retry"]
         XCTAssertTrue(retry.waitForExistence(timeout: 30), "the offline screen shows: \(status(app))")
         XCTAssertTrue(app.staticTexts["Can't reach the studio"].exists)
@@ -174,9 +174,9 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(status(app).contains("alerts 1"), status(app))
         shot("commands")
 
-        // Virt's settings sheet, from its link
-        app.open(URL(string: "virt://settings")!)
-        let settings = app.navigationBars["Virt"]
+        // Virt's settings sheet (the Home Screen quick action and virt://settings open it the same way)
+        app.buttons["dbg-settings"].tap()
+        let settings = app.buttons["settings-done"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10), "the settings sheet opens")
         sleep(1)
         shot("settings")

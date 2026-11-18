@@ -56,7 +56,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         config.applicationNameForUserAgent = "Virt/1.0"
         var bound = true
         #if DEBUG
-        // the offline check's made-up start page (localhost) isn't one of the studio's domains: that test loads it
+        // the offline check's made-up start page (a .invalid host) isn't one of the studio's domains: that test loads it
         // unbound, with no bridge (WebKit allows the bridge only on bound domains)
         if ProcessInfo.processInfo.environment["VIRT_START_URL"] != nil { bound = false }
         #endif
@@ -471,6 +471,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         var actions: [(String, () -> Void)] = TimerCommand.allCases.map { c in (c.rawValue, { Engine.shared.command(c) }) }
         actions.append(("rest", { Engine.shared.startRest(seconds: 90) }))
         actions.append(("start", { Engine.shared.startToday() }))
+        actions.append(("settings", { [weak self] in self?.showSettings() }))
         let buttons = UIStackView(arrangedSubviews: actions.map { name, run -> UIButton in
             let b = UIButton(type: .system, primaryAction: UIAction(title: name) { _ in run() })
             b.accessibilityIdentifier = "dbg-\(name)"
