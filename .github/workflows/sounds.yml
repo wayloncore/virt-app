@@ -31,17 +31,24 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" -q install numpy==2.2.4 matplotlib==3.10.1 soundfile==0.13.1
       - name: Download the Kenney packs (CC0)
         run: |
-          mkdir -p "$RUNNER_TEMP/packs"
+          # kenney.nl refuses automated downloads (403 to a runner, Nov 17), so this doesn't use it. Kenney posts the
+          # same CC0 packs on OpenGameArt, which allows direct downloads. A pack that can't be found is skipped; at
+          # least one has to come down.
+          mkdir -p "$RUNNER_TEMP/packs"; got=0
           for pack in interface-sounds ui-audio digital-audio; do
-            page=$(curl -fsSL "https://kenney.nl/assets/$pack")
-            zip=$(printf '%s' "$page" | grep -oE '(https://kenney\.nl)?/media/pages/assets/[^"'"'"' ]+\.zip' | head -1)
-            [ -n "$zip" ] || { echo "::error::No download link on kenney.nl/assets/$pack"; exit 1; }
-            case "$zip" in /*) zip="https://kenney.nl$zip";; esac
+            page="https://opengameart.org/content/$pack"
+            html=$(curl -fsSL "$page" 2>/dev/null) || { echo "::warning::$page: no answer"; continue; }
+            zip=$(printf '%s' "$html" | grep -oE 'https://opengameart\.org/sites/default/files/[^"'"'"' <>]+\.zip' | head -1)
+            [ -n "$zip" ] || { echo "::warning::$page: no .zip link"; continue; }
             echo "$pack: $zip"
-            curl -fsSL "$zip" -o "$RUNNER_TEMP/$pack.zip"
-            unzip -q -o "$RUNNER_TEMP/$pack.zip" -d "$RUNNER_TEMP/packs/$pack"
-            find "$RUNNER_TEMP/packs/$pack" -iname '*licen*' -exec sh -c 'echo "--- $1"; head -c 600 "$1"; echo' _ {} \;
+            if curl -fsSL "$zip" -o "$RUNNER_TEMP/$pack.zip" && unzip -q -o "$RUNNER_TEMP/$pack.zip" -d "$RUNNER_TEMP/packs/$pack"; then
+              got=$((got + 1))
+              printf '%s' "$html" | grep -oiE 'CC0|Creative Commons Zero|public domain' | sort -u | sed "s/^/$pack license on the page: /"
+            else
+              echo "::warning::Couldn't download $pack"
+            fi
           done
+          [ $got -gt 0 ] || { echo "::error::No pack came down"; exit 1; }
       - name: Survey
         if: env.MODE == 'survey'
         run: |
