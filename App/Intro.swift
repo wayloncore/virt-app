@@ -10,8 +10,10 @@ import VirtCore
 /// - the lock screen: the launch clip's last frame (VirtLock.png is that exact frame, so the V never jumps);
 /// - the unlock clip (the camera flies into the V until it's black; about 1.7 s) when Face ID says yes.
 ///
-/// Both clips are 1080 x 1920 on pure black and are drawn the same way as the still (fit to the screen's width,
-/// centered), so they line up exactly. No sound: the clips have no audio track and the players are muted. With
+/// The clips and the still are on pure black and are all drawn the same way (fit to the screen's width, centered), so
+/// they line up exactly. The launch clip and the still are 1080 x 1920; the unlock clip is drawn on a taller 1080 x 2400
+/// canvas so its fly-in runs off the real screen's top and bottom (its first frame is the still's, with black above
+/// and below, off screen). No sound: the clips have no audio track and the players are muted. With
 /// Reduce Motion nothing plays: the still fades in, and unlocking fades straight to Training.
 @MainActor final class IntroPlayback {
     /// The lock screen's V: the launch clip's last frame.
@@ -65,8 +67,9 @@ import VirtCore
 
     // MARK: - The launch clip
 
-    /// Plays the launch clip from the start (or, in the test build, holds it still `frozenAt` seconds in).
-    func playLaunch(frozenAt: TimeInterval? = nil) {
+    /// Plays the launch clip from the start (or, in the test build, holds it still `frozenAt` seconds in, or plays it
+    /// at `rate`).
+    func playLaunch(frozenAt: TimeInterval? = nil, rate: Float = 1) {
         guard let launch else { return onLaunchEnded?() ?? () }
         launchStarted = true
         view.show(still: false, launch: true, unlock: false)
@@ -75,7 +78,7 @@ import VirtCore
             launch.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         } else {
             launch.seek(to: .zero)
-            launch.play()
+            launch.playImmediately(atRate: rate)
         }
     }
 

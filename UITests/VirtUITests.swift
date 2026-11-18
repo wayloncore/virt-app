@@ -233,6 +233,7 @@ final class VirtUITests: XCTestCase {
             ("intro-6-still", ["VIRT_INTRO": "off"]),
             ("unlock-1-start", ["VIRT_UNLOCK_AT": "0"]),
             ("unlock-2-zoom", ["VIRT_UNLOCK_AT": "0.6"]),
+            ("unlock-2b-edges", ["VIRT_UNLOCK_AT": "0.9"]),
             ("unlock-3-fly", ["VIRT_UNLOCK_AT": "1.2"]),
             ("unlock-4-past", ["VIRT_UNLOCK_AT": "1.45"]),
         ]
@@ -274,9 +275,11 @@ final class VirtUITests: XCTestCase {
 
     /// A tap skips the launch clip straight to the lock screen.
     func testATapSkipsTheIntro() {
-        let app = launch(env: ["VIRT_TEST_HTML": Self.page], unlock: false)
+        // the launch clip at a fifth of its speed (about 17 s), so the tap lands during it on a slow simulator
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page, "VIRT_INTRO_RATE": "0.2"], unlock: false)
         let skip = app.descendants(matching: .any)["skip-intro"]
         XCTAssertTrue(skip.waitForExistence(timeout: 10), "the launch clip can be skipped")
+        XCTAssertEqual(introStage(app), "launch")
         skip.tap()
         XCTAssertTrue(waitIntro(app, "lock", 1.5), "straight to the lock screen: \(introStage(app))")
         XCTAssertTrue(app.buttons["unlock"].waitForExistence(timeout: 2))

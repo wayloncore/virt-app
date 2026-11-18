@@ -38,6 +38,8 @@ import VirtCore
     /// The test build's still frames (VIRT_INTRO_AT, VIRT_UNLOCK_AT: seconds into the launch or unlock clip).
     private var frozenLaunchAt: TimeInterval?
     private var frozenUnlockAt: TimeInterval?
+    /// The test build's launch clip speed (VIRT_INTRO_RATE), so a test can tap during it on a slow simulator.
+    private var launchRate: Float = 1
 
     /// How the test build answers instead of Face ID (Debug only; a Release build always asks Face ID).
     private enum Answer { case faceID, yes, no }
@@ -60,6 +62,7 @@ import VirtCore
         if let s = env["VIRT_LOCK_AFTER"], let n = TimeInterval(s) { limit = n }
         if let s = env["VIRT_INTRO_AT"], let n = TimeInterval(s) { frozenLaunchAt = n }
         if let s = env["VIRT_UNLOCK_AT"], let n = TimeInterval(s) { frozenUnlockAt = n }
+        if let s = env["VIRT_INTRO_RATE"], let n = Float(s), n > 0 { launchRate = n }
         // the lock screen as it is after time away: the still, no launch clip
         if env["VIRT_INTRO"] == "off" { introOff = true }
         #endif
@@ -73,7 +76,7 @@ import VirtCore
             flow.unlocked()  // the unlock clip's picture only; still locked underneath
             playback.playUnlock(frozenAt: t)
         } else if flow.stage == .launch {
-            playback.playLaunch(frozenAt: frozenLaunchAt)
+            playback.playLaunch(frozenAt: frozenLaunchAt, rate: launchRate)
         } else {
             playback.showStill(animated: flow.reduceMotion && !introOff)
         }

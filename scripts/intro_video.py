@@ -17,10 +17,16 @@ the clip's own last frame. That last frame is the lock screen's V (VirtLock.png 
 The unlock clip (1080 x 1916, 24 fps, 5.0 s): the large V holds until 0.7 s, the camera flies into it, and it's black
 from 4.42 s. Padded 2 px top and bottom to 1080 x 1920 (that lines its V up with the launch clip's, measured). It
 starts on the lock screen's own frame and blends into the clip over a short hold, then the zoom is speed-ramped
-exponentially (1.8x speeding up to 3.6x; Tyler: "exponential so it's not so slow"), and it ends on black.
+exponentially (1.8x speeding up to 3.6x; Tyler: "exponential so it's not so slow"), and it ends on black. It's drawn
+on a taller canvas (1080 x 2400, taller than any iPhone screen) with a gentle extra zoom (1x to 1.25x over its first
+0.8 s of zoom, before the V reaches the old frame's top and bottom): its first frame is the lock screen's exactly
+(the app fits both to the screen's width, so the extra height is off screen), and as the camera flies in the gold
+runs off the real screen edges instead of stopping at the 9:16 clip's edges.
 
 Speeding a 24 fps clip up by uneven amounts skips frames unevenly, which judders. So both clips are first smoothed to
 120 fps (ffmpeg's motion interpolation), then sampled at 60 fps along the new timing.
+
+INTRO_CACHE=<folder> keeps the smoothed frames there, so a re-run only redoes the timing (a few seconds).
 
 Both: no audio track, pure black (#000) background (near-black noise is cleared), the Kling watermark painted out,
 H.264 at 60 fps.
@@ -52,8 +58,18 @@ class Source:
     needed (the whole clip doesn't fit in memory)."""
 
     def __init__(self, path, start, end):
-        self.dir = tempfile.mkdtemp(prefix="virt-intro-")
+        cache = os.environ.get("INTRO_CACHE")
+        self.keep = bool(cache)
         self.start = start
+        if cache:
+            self.dir = os.path.join(cache, f"{os.path.basename(path)}-{start:.2f}-{end:.2f}")
+            if os.path.isdir(self.dir) and os.listdir(self.dir):
+                self.names = sorted(os.listdir(self.dir))
+                self.cache = {}
+                return
+            os.makedirs(self.dir, exist_ok=True)
+        else:
+            self.dir = tempfile.mkdtemp(prefix="virt-intro-")
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(start), "-to", str(end), "-i", path, "-an", "-vf",
                         f"minterpolate=fps={SMOOTH_FPS}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,"
                         "scale=in_color_matrix=bt709:in_range=tv,format=rgb24",
@@ -88,7 +104,8 @@ class Source:
         return self.frame(i) * (1 - f) + self.frame(i + 1) * f
 
     def close(self):
-        shutil.rmtree(self.dir, ignore_errors=True)
+        if not self.keep:
+            shutil.rmtree(self.dir, ignore_errors=True)
 
 
 def clean(a):
@@ -97,8 +114,8 @@ def clean(a):
     return np.clip(a + 0.5, 0, 255).astype(np.uint8)
 
 
-def encode(frames, path):
-    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(OUT_FPS),
+def encode(frames, path, height=H):
+    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{height}", "-r", str(OUT_FPS),
            "-i", "-", "-an", "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p",
            "-c:v", "libx264", "-preset", "veryslow", "-crf", "17", "-profile:v", "high", "-level", "4.2",
            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
@@ -172,6 +189,21 @@ U_HOLD, U_ZOOM, U_BLACK = 0.58, 0.70, 4.42   # the hold from, the zoom from, bla
 V0, V1 = 1.8, 3.6                            # the speed ramp: exponential from 1.8x to 3.6x
 U_MIX = 0.12                                 # blend from the lock screen's frame into the clip
 U_TAIL = 2                                   # black frames at the end
+U_H = 2400                                   # the taller canvas
+U_EXTRA, U_EXTRA_BY = 1.25, 0.8              # the extra zoom, reached this many seconds into the zoom
+
+
+def extra_zoom(v):
+    x = min(max(v / U_EXTRA_BY, 0.0), 1.0)
+    return 1 + (U_EXTRA - 1) * x * x * (3 - 2 * x)
+
+
+def onto_canvas(a, z):
+    """A 1080 x 1920 frame on the 1080 x 2400 canvas, centered, zoomed by z about the middle."""
+    img = Image.fromarray(a)
+    # canvas pixel (X, Y) shows frame pixel ((X - 540) / z + 540, (Y - 1200) / z + 960)
+    m = (1 / z, 0, W / 2 - (W / 2) / z, 0, 1 / z, H / 2 - (U_H / 2) / z)
+    return np.asarray(img.transform((W, U_H), Image.AFFINE, m, resample=Image.BICUBIC, fillcolor=(0, 0, 0)))
 
 
 def unlock_times():
@@ -182,22 +214,22 @@ def unlock_times():
     n = int(round(total * OUT_FPS)) + 1
     for k in range(n):
         u = k / OUT_FPS
+        v = min(max(u - t_hold, 0.0), t_zoom)
         if u < t_hold:
             s = U_HOLD + u
         else:
-            v = min(u - t_hold, t_zoom)
             s = U_ZOOM + V0 * (math.exp(a * v) - 1) / a
-        yield k, u, s
+        yield k, u, s, v
 
 
 def unlock_frames(src, still):
     still = still.astype(np.float32)
-    for k, u, s in unlock_times():
+    for k, u, s, v in unlock_times():
         a = src.at(s)
         mix = min(1.0, u / U_MIX)
-        yield clean(still * (1 - mix) + a * mix)
+        yield onto_canvas(clean(still * (1 - mix) + a * mix), extra_zoom(v))
     for _ in range(U_TAIL):
-        yield np.zeros((H, W, 3), np.uint8)
+        yield np.zeros((U_H, W, 3), np.uint8)
 
 
 def main():
@@ -215,7 +247,7 @@ def main():
 
     src = Source(sys.argv[2], U_HOLD - 0.1, U_BLACK + 0.2)
     unlock = os.path.join(OUT, "virt-unlock.mp4")
-    n = encode(unlock_frames(src, still), unlock)
+    n = encode(unlock_frames(src, still), unlock, U_H)
     src.close()
     print(f"unlock: {n} frames, {n / OUT_FPS:.2f} s, {os.path.getsize(unlock) / 1e6:.2f} MB")
 
