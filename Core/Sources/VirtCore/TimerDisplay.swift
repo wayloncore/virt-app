@@ -50,4 +50,8 @@ public struct PlannedAlert: Equatable, Sendable {
     public var fireAt: Date
     public var title: String
     public var body: String
+    /// Which zero sound it plays (a rest ending sounds different from work ending).
+    public var cue: SoundCue = .go
+    /// How long the countdown that ends here runs, when known (the 3-2-1 lead-in skips very short ones).
+    public var length: TimeInterval? = nil
 }

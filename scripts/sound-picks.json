@@ -1,0 +1,20 @@
+{
+  "_note": "Kenney's Interface Sounds (CC0), as the survey listed them. Each cue: file, and optionally start, length (seconds) and gain (dB).",
+  "digital": {
+    "go": {
+      "file": "interface-sounds/Audio/confirmation_003.ogg"
+    },
+    "rest": {
+      "file": "interface-sounds/Audio/question_001.ogg"
+    },
+    "tick": {
+      "file": "interface-sounds/Audio/tick_002.ogg"
+    },
+    "set": {
+      "file": "interface-sounds/Audio/click_002.ogg"
+    },
+    "finish": {
+      "file": "interface-sounds/Audio/confirmation_001.ogg"
+    }
+  }
+}

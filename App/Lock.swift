@@ -22,6 +22,11 @@ import VirtCore
     /// Why the last try didn't unlock, shown under the button.
     @Published private(set) var note: String?
     @Published private(set) var checking = false
+    /// The intro (Intro.swift) plays over the lock screen's V on a fresh launch only.
+    @Published private(set) var introPlaying = true
+    private(set) var introStart = Date()
+    /// The test build's still frames of the intro (VIRT_INTRO_AT, seconds in).
+    private(set) var introFrozenAt: TimeInterval?
 
     private var policy: LockPolicy
     private var active = false
@@ -43,9 +48,19 @@ import VirtCore
         if args.contains("-uitest-skip-faceid") { answer = .yes }
         if args.contains("-uitest-faceid-fails") { answer = .no }
         if let s = ProcessInfo.processInfo.environment["VIRT_LOCK_AFTER"], let n = TimeInterval(s) { limit = n }
+        if let s = ProcessInfo.processInfo.environment["VIRT_INTRO_AT"], let n = TimeInterval(s) { introFrozenAt = n }
         #endif
         self.answer = answer
         policy = LockPolicy(awayLimit: limit)
+        if introFrozenAt == nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + IntroView.length + 0.05) { [weak self] in self?.endIntro() }
+        }
+    }
+
+    /// The intro is over (or a tap skipped it): the lock screen's own V takes over in the same spot.
+    func endIntro() {
+        guard introPlaying, introFrozenAt == nil else { return }
+        introPlaying = false
     }
 
     /// Seconds on a clock that keeps running while the phone sleeps and can't be set in Settings.
@@ -178,8 +193,19 @@ struct LockView: View {
         let locked = lock.mode == .locked
         ZStack {
             Color.virtBlack.ignoresSafeArea()
-            Image("VirtMark").resizable().scaledToFit().frame(width: 120, height: 120)
-                .accessibilityHidden(true)
+            if lock.introPlaying {
+                IntroView(frozenAt: lock.introFrozenAt, reduceMotion: UIAccessibility.isReduceMotionEnabled, start: lock.introStart)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { lock.endIntro() } }
+                    .ignoresSafeArea()
+            } else {
+                // centered on the whole screen, exactly where the launch screen puts it
+                Image("VirtMark").resizable().scaledToFit().frame(width: IntroView.markSize, height: IntroView.markSize)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            }
             if locked {
                 VStack(spacing: 14) {
                     Spacer()

@@ -18,6 +18,20 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
 - `Widget/`: the timer extension (`com.tyleralocke.virt.timer`): the Live Activity and Dynamic Island, with −15,
   pause/resume, +15 and skip buttons. `Shared/`: compiled into both (the activity's attributes, the buttons' intent,
   the colors).
+- `Widget/TodayWidgets.swift`: the Today widget (Home Screen small and medium; Lock Screen circular, rectangular and
+  inline) and the Week widget (Lock Screen circular and rectangular). Their views are in `Shared/TodayViews.swift`, the
+  Live Activity's in `Shared/TimerViews.swift`, so the test build's widget gallery (`App/WidgetGallery.swift`,
+  `-uitest-widgets`) draws them at real size for screenshots.
+- `Shared/SharedStore.swift`: the last `today` from the page, shared with the widgets through the keychain group
+  `6WK983RXJT.com.tyleralocke.virt.shared` (not an App Group: App Store Connect's API can't create those). In an unsigned
+  simulator build it falls back to the app's own copy.
+- `App/Intents.swift`: Siri, Shortcuts and the Action button (Start my workout; Start a rest timer). `App/Reminders.swift`:
+  training-day reminders. `App/Sound.swift` and `App/Sounds/`: the sounds (`LICENSES.md` says where each came from;
+  `.github/workflows/sounds.yml` and `scripts/sounds.py` make them). `App/SettingsView.swift`: Virt's own settings and
+  tips sheet. `App/Intro.swift`: the intro on a fresh launch.
+- The web view is bound to the studio's domains (Info.plist `WKAppBoundDomains`, the same list as
+  `Navigation.appBoundDomains`), which is what lets Training's service worker run in the app. A main-frame page outside
+  them opens in Safari.
 - `UITests/`: run in the iPhone simulator. `project.yml`: the XcodeGen spec (the project file isn't kept).
 - `.github/workflows/mac.yml`: the batched Mac run (VirtCore tests, build, UI tests, screenshots printed into the log).
   `core.yml`: VirtCore's tests on Linux on every push that changes `Core/` (free, about a minute).
@@ -32,7 +46,9 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
 The contract is the website's `docs/kinetic/bridge.md` (`src/lib/training/kinetic.js`). The page posts to the
 `window.webkit.messageHandlers.kinetic` handler (keep that name: "Kinetic" was the app's working name) and takes
 lock-screen buttons back as `kinetic:command` events. Don't change the website from here: if Virt needs more, open a
-small `queue` issue in wayloncore/tyleralocke describing an additive change. Virt already reads an optional
+small `queue` issue in wayloncore/tyleralocke describing an additive change. Virt also reads `today` and
+`set.logged`, sends `startToday` and `rest { seconds }`, and sets `window.kineticApp` before the page loads (#533, #550).
+Virt already reads an optional
 `upcoming` list on `timer.start` (the steps after this one, each `{ id, kind, label, endsAt }`) and schedules an alert
 at each of their zeros; until the page sends it, only the running step's zero sounds while the phone is locked.
 

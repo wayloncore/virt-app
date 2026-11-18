@@ -18,6 +18,12 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private let testHTML: String?
     private let testing: Bool
     private var statusLine: UILabel?
+    /// The saved copy has been tried once for the page that failed (OfflinePolicy).
+    private var triedCache = false
+    private var noSignal: UILabel?
+    private var readyWork: DispatchWorkItem?
+    /// The last load error, for the test build's status line.
+    private var lastError = "none"
 
     init() {
         let env = ProcessInfo.processInfo.environment
@@ -48,7 +54,20 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.applicationNameForUserAgent = "Virt/1.0"
-        config.userContentController.add(BridgeHandler(), name: "kinetic")  // the website looks for exactly this name
+        var bound = true
+        #if DEBUG
+        // the offline check's made-up start page (a .invalid host) isn't one of the studio's domains: that test loads it
+        // unbound, with no bridge (WebKit allows the bridge only on bound domains)
+        if ProcessInfo.processInfo.environment["VIRT_START_URL"] != nil { bound = false }
+        #endif
+        if bound {
+            config.userContentController.add(BridgeHandler(), name: "kinetic")  // the website looks for exactly this name
+            config.userContentController.addUserScript(WKUserScript(source: Self.startScript, injectionTime: .atDocumentStart,
+                                                                    forMainFrameOnly: true))
+        }
+        // bound to the studio's domains (Info.plist WKAppBoundDomains): that's what lets Training's service worker
+        // run in the app, so it keeps working with no signal. Other sites already open in Safari (Navigation).
+        config.limitsNavigationsToAppBoundDomains = bound
 
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
@@ -98,19 +117,76 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         }
     }
 
+    /// Runs before the page's own scripts: tells Training that Virt plays the lead-in, zero, set and finish sounds
+    /// itself (so the page can skip its own; an additive hint the page may ignore), and asks WebKit to mix the page's
+    /// own sounds with his music.
+    private static let startScript = """
+        (() => {
+          try { window.kineticApp = Object.freeze({ app: 'virt', version: 2, sounds: ['lead-in', 'zero', 'set', 'finish'] }); } catch (e) {}
+          try { if (navigator.audioSession && navigator.audioSession.type === 'auto') navigator.audioSession.type = 'ambient'; } catch (e) {}
+        })();
+        """
+
     /// Saves the sign-in when the app goes to the background (SceneDelegate).
     func saveSignIn() {
         CookieKeeper.save(from: web.configuration.websiteDataStore.httpCookieStore)
     }
 
-    // MARK: - Page commands (lock-screen buttons)
+    // MARK: - Page commands (lock-screen buttons, Siri, widgets, reminders)
 
-    func send(_ command: TimerCommand) {
+    func send(_ command: TimerCommand) { send(page: .timer(command)) }
+
+    func send(page command: PageCommand) {
         // a little time in the background so the page can take it, if it's awake
         let task = UIApplication.shared.beginBackgroundTask(withName: "virt.command")
         web.evaluateJavaScript(command.script) { _, _ in
             if task != .invalid { UIApplication.shared.endBackgroundTask(task) }
         }
+    }
+
+    /// True while Training itself is showing (the test build's stand-in page counts).
+    private var onTraining: Bool {
+        if testHTML != nil { return web.url?.path.hasPrefix("/virt-bridge-test") ?? false }
+        return Navigation.isTraining(web.url)
+    }
+
+    func goToToday(midWorkout: Bool) {
+        if errorHost != nil { return retry() }
+        if testHTML != nil { return }
+        if Navigation.todayAction(current: web.url, midWorkout: midWorkout) == .loadHome {
+            Engine.shared.pageLoading()
+            web.load(URLRequest(url: Navigation.home))
+        }
+    }
+
+    /// The page posted a message: it's up and listening.
+    func pagePosted() {
+        if onTraining { Engine.shared.pageReady() }
+    }
+
+    // MARK: - Virt's own sheets
+
+    func askAboutReminders() {
+        if let p = presentedViewController {
+            Engine.shared.askNote = "skipped: \(type(of: p)) up"
+            return
+        }
+        let today = Engine.shared.today
+        let host = UIHostingController(rootView: ReminderAskView(today: today) { [weak self] yes in
+            yes ? Reminders.shared.turnOn() : Reminders.shared.turnOff()
+            self?.dismiss(animated: true)
+        })
+        host.view.backgroundColor = .virtBlack
+        host.overrideUserInterfaceStyle = .dark
+        host.sheetPresentationController?.detents = [.medium()]
+        host.sheetPresentationController?.prefersGrabberVisible = true
+        present(host, animated: true)
+    }
+
+    func showSettings() {
+        if let p = presentedViewController { p.dismiss(animated: false) }
+        let host = UIHostingController(rootView: SettingsView { [weak self] in self?.dismiss(animated: true) })
+        present(host, animated: true)
     }
 
     // MARK: - Looks
@@ -183,6 +259,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     }
 
     private func retry() {
+        triedCache = false
         errorHost?.willMove(toParent: nil)
         errorHost?.view.removeFromSuperview()
         errorHost?.removeFromParent()
@@ -195,11 +272,53 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         if web.url == nil { loadStart() } else { web.reload() }
     }
 
-    /// Only a real network problem shows the offline screen; a stopped or replaced load doesn't.
-    private func isOffline(_ error: Error) -> Bool {
+    /// A load failed. Training works offline in its service worker, so the offline screen shows only when there's
+    /// no page at all, after trying the saved copy once (OfflinePolicy). A page that's already up stays up.
+    private func failed(_ error: Error) {
+        refresher.endRefreshing()
         let e = error as NSError
-        if e.domain == NSURLErrorDomain { return e.code != NSURLErrorCancelled }
-        return false
+        lastError = "\(e.domain) \(e.code)"
+        let failing = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL
+        if e.domain == WKError.errorDomain, e.code == WKError.Code.navigationAppBoundDomain.rawValue {
+            // a page outside the studio's domains: Safari, not a dead end
+            if let u = failing { UIApplication.shared.open(u) }
+            return
+        }
+        let code = e.domain == NSURLErrorDomain ? e.code : nil
+        switch OfflinePolicy.choose(urlErrorCode: code, hasPage: web.backForwardList.currentItem != nil, triedCache: triedCache) {
+        case .ignore: break
+        case .keepPage: showNoSignal()
+        case .tryCache:
+            triedCache = true
+            web.load(URLRequest(url: failing ?? startURL, cachePolicy: .returnCacheDataDontLoad))
+        case .showOffline: showError(error)
+        }
+        updateStatusLine()
+    }
+
+    /// A short note over a page that stays up with no signal.
+    private func showNoSignal() {
+        noSignal?.removeFromSuperview()
+        let l = PaddedLabel()
+        l.text = "No signal. Training keeps working on this phone."
+        l.font = .preferredFont(forTextStyle: .footnote)
+        l.textColor = .virtBlack
+        l.backgroundColor = .virtGold
+        l.layer.cornerRadius = 14
+        l.clipsToBounds = true
+        l.textAlignment = .center
+        l.accessibilityIdentifier = "no-signal"
+        l.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(l)
+        NSLayoutConstraint.activate([
+            l.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            l.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            l.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -32),
+        ])
+        noSignal = l
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak l] in
+            UIView.animate(withDuration: 0.3, animations: { l?.alpha = 0 }, completion: { _ in l?.removeFromSuperview() })
+        }
     }
 
     // MARK: - WKNavigationDelegate
@@ -232,7 +351,13 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         decisionHandler(response.canShowMIMEType ? .allow : .download)
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        readyWork?.cancel()
+        Engine.shared.pageLoading()
+    }
+
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        triedCache = false
         hideSplash()
         updateStatusLine()
     }
@@ -242,16 +367,22 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         hideSplash()
         matchStatusBar()
         updateStatusLine()
+        // Training listens for commands once its scripts have run; a message from the page says so sooner
+        readyWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.onTraining else { return }
+            Engine.shared.pageReady()
+        }
+        readyWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        refresher.endRefreshing()
-        if isOffline(error) { showError(error) }
+        failed(error)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        refresher.endRefreshing()
-        if isOffline(error) { showError(error) }
+        failed(error)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -337,10 +468,15 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         l.backgroundColor = UIColor.black.withAlphaComponent(0.7)
         l.accessibilityIdentifier = "virt-status"
         l.translatesAutoresizingMaskIntoConstraints = false
-        let buttons = UIStackView(arrangedSubviews: TimerCommand.allCases.map { c -> UIButton in
-            let b = UIButton(type: .system, primaryAction: UIAction(title: c.rawValue) { _ in Engine.shared.command(c) })
-            b.accessibilityIdentifier = "dbg-\(c.rawValue)"
+        var actions: [(String, () -> Void)] = TimerCommand.allCases.map { c in (c.rawValue, { Engine.shared.command(c) }) }
+        actions.append(("rest", { Engine.shared.startRest(seconds: 90) }))
+        actions.append(("start", { Engine.shared.startToday() }))
+        actions.append(("settings", { [weak self] in self?.showSettings() }))
+        let buttons = UIStackView(arrangedSubviews: actions.map { name, run -> UIButton in
+            let b = UIButton(type: .system, primaryAction: UIAction(title: name) { _ in run() })
+            b.accessibilityIdentifier = "dbg-\(name)"
             b.tintColor = .virtGold
+            b.titleLabel?.adjustsFontSizeToFitWidth = true
             return b
         })
         buttons.distribution = .fillEqually
@@ -362,7 +498,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private func updateStatusLine() {
         guard let l = statusLine else { return }
         let host = web?.url?.host ?? "none"
-        l.text = Engine.shared.status + " · host \(host)" + (errorHost != nil ? " · offline screen" : "")
+        l.text = Engine.shared.status + " · host \(host)" + (errorHost != nil ? " · offline screen" : "") + " · error \(lastError)"
         view.bringSubviewToFront(l.superview ?? l)
     }
 }
@@ -372,7 +508,20 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 final class BridgeHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let m = BridgeMessage.decode(object: message.body) else { return }
-        Task { @MainActor in Engine.shared.receive(m) }
+        let main = message.frameInfo.isMainFrame
+        Task { @MainActor in
+            Engine.shared.receive(m)
+            if main, let shell = Engine.shared.page as? ShellController { shell.pagePosted() }
+        }
+    }
+}
+
+/// A label with room around its text (the no-signal note).
+final class PaddedLabel: UILabel {
+    override func drawText(in rect: CGRect) { super.drawText(in: rect.insetBy(dx: 14, dy: 7)) }
+    override var intrinsicContentSize: CGSize {
+        let s = super.intrinsicContentSize
+        return CGSize(width: s.width + 28, height: s.height + 14)
     }
 }
 

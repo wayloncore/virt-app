@@ -15,7 +15,7 @@ final class TimerBoardTests: XCTestCase {
         var b = TimerBoard()
         b.apply(.workoutStart(title: "Legs A"), now: s(0))
         b.apply(rest(0, 45), now: s(0))
-        XCTAssertEqual(b.alerts(now: s(0)), [PlannedAlert(identifier: "virt.timer.rest:0.0", fireAt: s(45), title: "Rest is over", body: "Up next: set 2 of Plank")])
+        XCTAssertEqual(b.alerts(now: s(0)), [PlannedAlert(identifier: "virt.timer.rest:0.0", fireAt: s(45), title: "Rest is over", body: "Up next: set 2 of Plank", cue: .go, length: 45)])
         XCTAssertEqual(b.nextZero(now: s(1)), s(45))
         XCTAssertEqual(b.display(now: s(0))?.endsAt, s(45))
         XCTAssertEqual(b.display(now: s(0))?.progressFrom, s(0))
@@ -33,7 +33,7 @@ final class TimerBoardTests: XCTestCase {
         b.apply(.timerEnd(id: "rest:0.0"), now: s(60))
         XCTAssertNil(b.display(now: s(60)))
         b.apply(.timerStart(TimerStart(id: "hold:60", kind: .hold, label: "Plank", endsAt: s(105), startedAt: s(60), next: "Logged at the time")), now: s(60))
-        XCTAssertEqual(b.alerts(now: s(60)), [PlannedAlert(identifier: "virt.timer.hold:60", fireAt: s(105), title: "Plank: time", body: "Set logged")])
+        XCTAssertEqual(b.alerts(now: s(60)), [PlannedAlert(identifier: "virt.timer.hold:60", fireAt: s(105), title: "Plank: time", body: "Set logged", cue: .rest, length: 45)])
         b.apply(.timerEnd(id: "hold:60"), now: s(105))
         XCTAssertTrue(b.alerts(now: s(105)).isEmpty)
         XCTAssertTrue(b.keepAwake(now: s(105)), "the workout is still going")
@@ -214,5 +214,52 @@ final class TimerBoardTests: XCTestCase {
         b.apply(rest(0, 45), now: s(0))
         XCTAssertEqual(b.title, "Workout")
         XCTAssertNotNil(b.workout)
+    }
+
+    // MARK: - Rests from Siri, and messages that aren't about the timer
+
+    func testANativeRestRunsUntilThePageTakesOver() {
+        var b = TimerBoard()
+        b.startNativeRest(seconds: 90, now: s(0))
+        XCTAssertEqual(b.countdown?.id, "virt-rest:1763373600000")
+        XCTAssertEqual(b.alerts(now: s(1)).map(\.fireAt), [s(90)])
+        XCTAssertEqual(b.alerts(now: s(1)).first?.title, "Rest is over")
+        XCTAssertEqual(b.alerts(now: s(1)).first?.body, "Time's up")
+        XCTAssertTrue(b.keepAwake(now: s(1)))
+        XCTAssertFalse(b.expireNative(now: s(89)), "not yet")
+        // the page heard the rest command and started its own
+        b.apply(rest(2, 88), now: s(2))
+        XCTAssertEqual(b.countdown?.id, "rest:2.0")
+        XCTAssertEqual(b.alerts(now: s(3)).map(\.identifier), ["virt.timer.rest:2.0"], "the page's rest replaced Virt's")
+        XCTAssertFalse(b.expireNative(now: s(200)), "the page ends its own")
+    }
+
+    func testANativeRestNoPageHeardEndsItselfAtZero() {
+        var b = TimerBoard()
+        b.startNativeRest(seconds: 30, now: s(0))
+        XCTAssertTrue(b.expireNative(now: s(30)))
+        XCTAssertNil(b.countdown)
+        XCTAssertNil(b.display(now: s(30)), "the Live Activity ends")
+    }
+
+    func testTodayIsNotASignOfAWorkout() {
+        var b = TimerBoard()
+        b.apply(.workoutStart(title: "Legs A"), now: s(0))
+        b.apply(.today(TodayInfo(title: "Legs A")), now: s(TimerBoard.quietLimit))
+        XCTAssertEqual(b.lastMessageAt, s(0))
+        XCTAssertFalse(b.keepAwake(now: s(TimerBoard.quietLimit + 1)))
+        b.apply(.setLogged, now: s(TimerBoard.quietLimit + 2))
+        XCTAssertTrue(b.keepAwake(now: s(TimerBoard.quietLimit + 3)), "a logged set is")
+        XCTAssertNotNil(b.workout)
+    }
+
+    func testZeroSoundsFollowTheKind() {
+        var b = TimerBoard()
+        b.apply(intervalWithPlan(), now: s(0))
+        let cues = b.alerts(now: s(0)).map(\.cue)
+        XCTAssertEqual(cues.first, .rest, "work ends: rest starts")
+        XCTAssertEqual(cues.dropFirst().first, .go, "recovery ends: back to work")
+        let lengths = b.alerts(now: s(0)).map(\.length)
+        XCTAssertEqual(lengths.dropFirst().first ?? nil, 15, "each phase knows its own length")
     }
 }
