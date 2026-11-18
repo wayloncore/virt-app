@@ -151,7 +151,17 @@ def audio_files(packdir):
 
 
 LIKELY = ("bell", "bong", "chime", "glass", "ding", "confirm", "tick", "click", "tone", "pluck", "select", "drop",
-          "high", "low", "pep", "power", "maximize", "minimize", "toggle", "switch", "open", "close", "question")
+          "maximize", "minimize", "question")
+
+
+def stft_db(x, n=1024, hop=256):
+    """A plain spectrogram (dB), 0 to 8 kHz."""
+    x = np.pad(x, (0, max(0, n - len(x))))
+    frames = 1 + (len(x) - n) // hop
+    win = np.hanning(n)
+    spec = np.array([np.abs(np.fft.rfft(win * x[i * hop:i * hop + n])) for i in range(frames)]).T
+    top = int(8000 / (RATE / n))
+    return 20 * np.log10(spec[:top] + 1e-9)
 
 
 def survey(packdir, shotdir):
@@ -178,13 +188,13 @@ def survey(packdir, shotdir):
         group = likely[i:i + 24]
         fig, axes = plt.subplots(6, 4, figsize=(16, 15))
         for ax, (rel, s, x) in zip(axes.flat, group):
-            ax.specgram(x[: int(2.5 * RATE)], NFFT=1024, Fs=RATE, noverlap=768, cmap="magma", vmin=-120)
-            ax.set_ylim(0, 8000)
+            d = stft_db(x[: int(1.5 * RATE)])
+            ax.imshow(d, origin="lower", aspect="auto", cmap="magma", vmin=d.max() - 80, vmax=d.max(),
+                      extent=[0, len(x[: int(1.5 * RATE)]) / RATE, 0, 8000])
             ax.set_title(f"{rel.split('/')[-1]} {s['len']:.2f}s dom {s['dominant']:.0f}", fontsize=8)
             ax.tick_params(labelsize=6)
         for ax in list(axes.flat)[len(group):]:
             ax.axis("off")
-        fig.tight_layout()
         fig.savefig(os.path.join(shotdir, f"spectro-{i // 24 + 1}.png"), dpi=60)
         plt.close(fig)
 
