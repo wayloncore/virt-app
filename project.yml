@@ -20,17 +20,27 @@ targets:
     type: application
     platform: iOS
     sources:
-      - App
+      - path: App
+        excludes: ["Sounds/LICENSES.md"]
       - Shared
     dependencies:
       - package: VirtCore
       - target: VirtTimer
+    # the keychain group the app shares with its widgets (Shared/SharedStore.swift). The app's own id stays first, so
+    # the sign-in copy (CookieKeeper) keeps going where it always has. No portal setup: App Store profiles allow the
+    # team's own keychain groups.
+    entitlements:
+      path: App/Virt.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.tyleralocke.virt
+          - $(AppIdentifierPrefix)com.tyleralocke.virt.shared
     info:
       path: App/Info.plist
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: Virt
+        CFBundleDisplayName: Virt timer
         ITSAppUsesNonExemptEncryption: false
         # the Live Activity (the timer on the lock screen and in the Dynamic Island)
         NSSupportsLiveActivities: true
@@ -45,6 +55,33 @@ targets:
         NSPhotoLibraryAddUsageDescription: "Virt saves a picture you share from Training to your photos only when you ask."
         # the Face ID lock (App/Lock.swift)
         NSFaceIDUsageDescription: "Virt uses Face ID to keep your training private."
+        # virt://today (the widgets), virt://start, virt://rest?seconds=90, virt://settings
+        CFBundleURLTypes:
+          - CFBundleURLName: com.tyleralocke.virt
+            CFBundleURLSchemes: [virt]
+        # the web view is bound to the studio's domains so Training's service worker runs (offline); the same list
+        # as VirtCore's Navigation.appBoundDomains
+        WKAppBoundDomains:
+          - tyleralocke.com
+          - studio.tyleralocke.com
+          - proud-unit-177a.cloudflareaccess.com
+          - challenges.cloudflare.com
+          - accounts.google.com
+          - login.microsoftonline.com
+          - appleid.apple.com
+          - github.com
+          - virt-offline-check.invalid
+        # touch and hold the Virt icon
+        UIApplicationShortcutItems:
+          - UIApplicationShortcutItemType: com.tyleralocke.virt.start
+            UIApplicationShortcutItemTitle: Start my workout
+            UIApplicationShortcutItemIconSymbolName: figure.strengthtraining.traditional
+          - UIApplicationShortcutItemType: com.tyleralocke.virt.rest
+            UIApplicationShortcutItemTitle: Rest 90 seconds
+            UIApplicationShortcutItemIconSymbolName: hourglass
+          - UIApplicationShortcutItemType: com.tyleralocke.virt.settings
+            UIApplicationShortcutItemTitle: Settings and tips
+            UIApplicationShortcutItemIconSymbolName: gearshape
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tyleralocke.virt
@@ -72,6 +109,11 @@ targets:
       - package: VirtCore
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
+    entitlements:
+      path: Widget/VirtTimer.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.tyleralocke.virt.shared
     info:
       path: Widget/Info.plist
       properties:

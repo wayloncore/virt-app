@@ -137,6 +137,93 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(activityOn, "the Live Activity started")
     }
 
+    // MARK: - Today, reminders, Siri's commands and the set haptic
+
+    /// The page's `today` reaches Virt (status line, shared store), the friendly reminders ask comes once, a logged set
+    /// taps, and Siri's two commands reach the page (a rest starts at once and the page takes it over).
+    func testTodayRemindersAndCommands() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20))
+
+        web.buttons["Post today"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "today Legs A"), status(app))
+        let ask = app.otherElements["reminder-ask"]
+        XCTAssertTrue(ask.waitForExistence(timeout: 10), "the friendly ask, the first time")
+        sleep(1)
+        shot("reminder-ask")
+        app.buttons["remind-yes"].tap()
+        allowAlerts()
+        XCTAssertTrue(waitStatus(app, contains: "reminders 6") || waitStatus(app, contains: "reminders 7", 5), status(app))
+        XCTAssertFalse(status(app).contains("store not saved"), status(app))
+
+        web.buttons["Post done"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "today Legs A done"), status(app))
+        XCTAssertTrue(waitStatus(app, contains: "reminders 6"), "today's is skipped once done: \(status(app))")
+        XCTAssertFalse(ask.exists, "asked once only")
+
+        web.buttons["Log set"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "taps 1"), "a light tap for a logged set: \(status(app))")
+
+        app.buttons["dbg-start"].tap()
+        XCTAssertTrue(web.staticTexts["command: startToday"].waitForExistence(timeout: 10), status(app))
+        app.buttons["dbg-rest"].tap()
+        XCTAssertTrue(web.staticTexts["command: rest 90"].waitForExistence(timeout: 10), status(app))
+        XCTAssertTrue(waitStatus(app, contains: "timer rest:"), "the page's rest took over from Virt's: \(status(app))")
+        XCTAssertTrue(status(app).contains("alerts 1"), status(app))
+        shot("commands")
+
+        // Virt's settings sheet, from its link
+        app.open(URL(string: "virt://settings")!)
+        let settings = app.navigationBars["Virt"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10), "the settings sheet opens")
+        sleep(1)
+        shot("settings")
+        app.swipeUp()
+        sleep(1)
+        shot("settings-2")
+        app.buttons["settings-done"].tap()
+    }
+
+    /// The widgets' own views at real size (a UI test can't add a widget to the Home Screen).
+    func testWidgetGallery() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uitest", "-uitest-reset", "-uitest-skip-faceid", "-uitest-widgets"]
+        app.launch()
+        let unlock = app.buttons["unlock"]
+        XCTAssertTrue(unlock.waitForExistence(timeout: 15))
+        unlock.tap()
+        sleep(2)
+        shot("widgets-home")
+        app.buttons["Lock"].tap()
+        sleep(1)
+        shot("widgets-lock")
+        app.buttons["StandBy"].tap()
+        sleep(1)
+        shot("widgets-standby")
+    }
+
+    /// The intro's frames, held still (the test build's VIRT_INTRO_AT): the launch screen's V, the word held, the
+    /// I, R and T fading, and the V settled where the lock screen's sits.
+    func testIntroFrames() {
+        for (name, at) in [("intro-1-start", "0"), ("intro-2-wordmark", "0.5"), ("intro-3-midfade", "0.72"), ("intro-4-final", "1.2")] {
+            let app = XCUIApplication()
+            app.launchArguments = ["-uitest", "-uitest-reset", "-uitest-faceid-fails"]
+            app.launchEnvironment = ["VIRT_TEST_HTML": Self.page, "VIRT_INTRO_AT": at]
+            app.launch()
+            XCTAssertTrue(app.otherElements["intro"].waitForExistence(timeout: 15), name)
+            sleep(2)
+            shot(name)
+            app.terminate()
+        }
+        // played for real: it ends by itself on the lock screen's V
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page], unlock: false, faceIDFails: true)
+        XCTAssertTrue(app.buttons["unlock"].waitForExistence(timeout: 15))
+        sleep(3)
+        XCTAssertFalse(app.otherElements["intro"].exists, "the intro ends by itself")
+        shot("intro-5-lock")
+    }
+
     // MARK: - The Face ID lock
 
     /// A fresh launch shows the lock screen first, with Training hidden; Unlock shows the page, already loaded.
@@ -236,6 +323,7 @@ final class VirtUITests: XCTestCase {
     <h2>Bridge check</h2>
     <p id="has">handler: no</p>
     <p><button onclick="go()" style="font-size: 20px">Start rest</button> <button onclick="fin()" style="font-size: 20px">Finish</button></p>
+    <p><button onclick="today(false)">Post today</button> <button onclick="today(true)">Post done</button> <button onclick="post({ type: 'set.logged' })">Log set</button></p>
     <p id="cmd">command: none</p>
     <script>
     const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kinetic;
@@ -244,10 +332,17 @@ final class VirtUITests: XCTestCase {
     const post = (m) => h && h.postMessage(m);
     const startMsg = () => ({ type: 'timer.start', id: 'rest:' + start, kind: 'rest', label: 'Rest', endsAt: end, startedAt: start, next: { label: 'set 2 of Plank' } });
     function go() { start = Date.now(); end = start + 90000; post({ type: 'workout.start', title: 'Bridge test' }); post(startMsg()); }
+    function today(done) {
+      const n = new Date(), later = new Date(n.getTime() + 2 * 3600e3), p = (x) => String(x).padStart(2, '0');
+      post({ type: 'today', date: n.getFullYear() + '-' + p(n.getMonth() + 1) + '-' + p(n.getDate()), title: 'Legs A', kind: 'workout',
+        done, minutes: 45, weekDone: done ? 3 : 2, weekPlanned: 4, streakWeeks: 3, trainingDays: [0, 1, 2, 3, 4, 5, 6],
+        usualTime: p(later.getHours()) + ':' + p(later.getMinutes()) });
+    }
     function fin() { post({ type: 'timer.cancel', id: 'rest:' + start }); post({ type: 'workout.finish', summary: { mins: 1, exercises: 1, sets: 1, steps: 0 } }); }
     addEventListener('kinetic:command', (e) => {
       const c = typeof e.detail === 'string' ? e.detail : e.detail && e.detail.command;
-      document.getElementById('cmd').textContent = 'command: ' + c;
+      document.getElementById('cmd').textContent = 'command: ' + c + (c === 'rest' ? ' ' + e.detail.seconds : '');
+      if (c === 'rest') { paused = false; start = Date.now(); end = start + e.detail.seconds * 1000; post({ type: 'workout.start', title: 'Bridge test' }); post(startMsg()); }
       if (c === 'add15' && !paused) { end += 15000; post(startMsg()); }
       if (c === 'pause' && !paused) { paused = true; left = end - Date.now(); post({ type: 'timer.pause', id: 'rest:' + start, remaining: left }); }
       if (c === 'resume' && paused) { paused = false; end = Date.now() + left; post({ type: 'timer.resume', id: 'rest:' + start, endsAt: end }); }

@@ -10,9 +10,9 @@ notification sound, 30 seconds at most).
 The Kenney packs are CC0 (App/Sounds/LICENSES.md). The workflow .github/workflows/sounds.yml downloads them on a
 GitHub runner (this repo never keeps the packs, only the few files picked from them).
 
-Needs numpy; `survey` and `pick` also need ffmpeg (to read .ogg) and matplotlib (for the spectrograms).
+Needs numpy; `survey` and `pick` also need soundfile (to read .ogg) and matplotlib (for the spectrograms).
 """
-import json, os, struct, subprocess, sys
+import json, os, struct, sys
 
 import numpy as np
 
@@ -37,10 +37,14 @@ def write_caf(path, samples):
 
 
 def read_any(path):
-    """Any audio file as mono float samples at RATE (through ffmpeg)."""
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(RATE), "-f", "f32le", "-"],
-                         check=True, capture_output=True).stdout
-    return np.frombuffer(raw, dtype="<f4").astype(np.float64)
+    """Any audio file (.ogg, .wav) as mono float samples at RATE (soundfile, with plain resampling if needed)."""
+    import soundfile
+    x, rate = soundfile.read(path, dtype="float64", always_2d=True)
+    x = x.mean(axis=1)
+    if rate != RATE and len(x) > 1:
+        n = int(round(len(x) * RATE / rate))
+        x = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x)
+    return x
 
 
 def level(x, peak_db):
@@ -160,7 +164,7 @@ def survey(packdir, shotdir):
     for p in audio_files(packdir):
         try:
             x = read_any(p)
-        except subprocess.CalledProcessError:
+        except Exception:
             continue
         if len(x) < 64:
             continue

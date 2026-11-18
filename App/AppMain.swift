@@ -1,5 +1,7 @@
 import Security
+import SwiftUI
 import UIKit
+import VirtCore
 import UserNotifications
 import WebKit
 
@@ -10,6 +12,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-uitest-reset") {
             UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+            for k in [Reminders.Key.enabled, Reminders.Key.movedTo, SoundBoard.Key.enabled, SoundBoard.Key.style, SharedStore.localKey] {
+                UserDefaults.standard.removeObject(forKey: k)
+            }
         }
         #endif
         Engine.shared.launched()
@@ -35,11 +40,45 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let w = UIWindow(windowScene: ws)
         let s = ShellController()
         w.rootViewController = s
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uitest-widgets") {
+            w.rootViewController = UIHostingController(rootView: WidgetGallery())
+        }
+        #endif
         w.tintColor = .virtGold
         w.makeKeyAndVisible()
         window = w
         shell = s
         lock.attach(to: ws, over: w)
+        // opened from a widget, a link or a quick action
+        if let url = options.urlContexts.first?.url { open(url) }
+        if let item = options.shortcutItem, let link = AppLink.quickAction(item.type) { DispatchQueue.main.async { self.go(link) } }
+    }
+
+    func scene(_ scene: UIScene, openURLContexts contexts: Set<UIOpenURLContext>) {
+        if let url = contexts.first?.url { open(url) }
+    }
+
+    func windowScene(_ windowScene: UIWindowScene, performActionFor shortcutItem: UIApplicationShortcutItem,
+                     completionHandler: @escaping (Bool) -> Void) {
+        guard let link = AppLink.quickAction(shortcutItem.type) else { return completionHandler(false) }
+        go(link)
+        completionHandler(true)
+    }
+
+    private func open(_ url: URL) {
+        guard let link = AppLink.parse(url) else { return }
+        DispatchQueue.main.async { self.go(link) }
+    }
+
+    /// Virt's own links: the widgets (today), Start my workout, a rest, and the settings sheet.
+    private func go(_ link: AppLink) {
+        switch link {
+        case .today: Engine.shared.openToday()
+        case .start: Engine.shared.startToday()
+        case .rest(let s): Engine.shared.startRest(seconds: s)
+        case .settings: shell?.showSettings()
+        }
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) { lock.willEnterForeground() }

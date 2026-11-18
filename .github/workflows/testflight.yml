@@ -138,6 +138,10 @@ jobs:
           APP="$RUNNER_TEMP/Virt.xcarchive/Products/Applications/Virt.app"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" -c "Print :CFBundleDisplayName" -c "Print :NSSupportsLiveActivities" -c "Print :NSFaceIDUsageDescription" "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" -c "Print :CFBundleVersion" "$APP/PlugIns/VirtTimer.appex/Info.plist"
+          # the shared keychain group (widgets) in both, signed in
+          for b in "$APP" "$APP/PlugIns/VirtTimer.appex"; do
+            echo "Entitlements of $(basename "$b"):"; codesign -d --entitlements - --xml "$b" 2>/dev/null | plutil -p - | grep -A3 -E "keychain|application-identifier" || true
+          done
       - name: Export and upload to App Store Connect
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
