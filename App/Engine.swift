@@ -109,11 +109,19 @@ import WidgetKit
 
     /// The friendly ask, once, the first time Training says which days he trains and when (never mid-workout).
     private func maybeAskAboutReminders() {
-        guard Reminders.shared.enabled == nil, !askedAboutReminders, board.workout == nil,
-              let t = today, TodayInfo.time(t.usualTime) != nil, !(t.trainingDays ?? []).isEmpty else { return }
+        guard Reminders.shared.enabled == nil, !askedAboutReminders else { return }
+        guard board.workout == nil else { askNote = "later (mid-workout)"; return }
+        guard let t = today, TodayInfo.time(t.usualTime) != nil, !(t.trainingDays ?? []).isEmpty else {
+            askNote = "waiting for days and time"
+            return
+        }
         askedAboutReminders = true
+        askNote = page == nil ? "no page" : "asked"
         page?.askAboutReminders()
     }
+
+    /// For the test build's status line: what the reminders ask did.
+    var askNote = "not yet"
 
     // MARK: - Commands for the page (Siri, widgets, quick actions, reminders)
 
@@ -307,7 +315,7 @@ import WidgetKit
         parts.append(board.workout.map { "workout \($0.title)" } ?? "no workout")
         parts.append("today \(today?.title ?? "none")\(today?.done == true ? " done" : "")")
         parts.append("store \(SharedStore.note)")
-        parts.append("reminders \(Reminders.shared.count)")
+        parts.append("reminders \(Reminders.shared.count) (ask \(askNote))")
         parts.append("taps \(lightTaps)")
         parts.append("sound \(SoundBoard.shared.last)")
         parts.append("sent \(sentCommands.isEmpty ? "none" : sentCommands.joined(separator: ","))")

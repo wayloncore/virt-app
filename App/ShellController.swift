@@ -60,6 +60,10 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         // bound to the studio's domains (Info.plist WKAppBoundDomains): that's what lets Training's service worker
         // run in the app, so it keeps working with no signal. Other sites already open in Safari (Navigation).
         config.limitsNavigationsToAppBoundDomains = true
+        #if DEBUG
+        // the offline check's made-up start page (localhost) loads unbound, so its failure reaches the delegate
+        if ProcessInfo.processInfo.environment["VIRT_START_URL"] != nil { config.limitsNavigationsToAppBoundDomains = false }
+        #endif
 
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
@@ -159,7 +163,10 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     // MARK: - Virt's own sheets
 
     func askAboutReminders() {
-        guard presentedViewController == nil else { return }
+        if let p = presentedViewController {
+            Engine.shared.askNote = "skipped: \(type(of: p)) up"
+            return
+        }
         let today = Engine.shared.today
         let host = UIHostingController(rootView: ReminderAskView(today: today) { [weak self] yes in
             yes ? Reminders.shared.turnOn() : Reminders.shared.turnOff()

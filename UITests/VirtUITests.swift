@@ -149,7 +149,8 @@ final class VirtUITests: XCTestCase {
         web.buttons["Post today"].tap()
         XCTAssertTrue(waitStatus(app, contains: "today Legs A"), status(app))
         let ask = app.buttons["remind-yes"]
-        XCTAssertTrue(ask.waitForExistence(timeout: 10), "the friendly ask, the first time: \(status(app))")
+        if !ask.waitForExistence(timeout: 10) { shot("reminder-ask-missing") }
+        XCTAssertTrue(ask.exists, "the friendly ask, the first time: \(status(app))")
         sleep(1)
         shot("reminder-ask")
         ask.tap()
