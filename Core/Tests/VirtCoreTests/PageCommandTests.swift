@@ -79,6 +79,8 @@ final class PageCommandTests: XCTestCase {
                        "a page that's up stays up (Training works offline)")
         XCTAssertEqual(OfflinePolicy.choose(urlErrorCode: -1009, hasPage: false, triedCache: false), .tryCache)
         XCTAssertEqual(OfflinePolicy.choose(urlErrorCode: -1008, hasPage: false, triedCache: true), .showOffline)
+        XCTAssertEqual(OfflinePolicy.choose(urlErrorCode: -999, hasPage: false, triedCache: true), .showOffline,
+                       "WebKit cancels the saved-copy try when there's none")
     }
 
     func testSounds() {
