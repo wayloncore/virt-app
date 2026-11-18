@@ -293,16 +293,16 @@ final class VirtUITests: XCTestCase {
         app.launchEnvironment = ["VIRT_TEST_HTML": Self.page]
         app.launch()
         let web = app.webViews["studio"]
-        var sawButton = false, sawUnlock = false
+        var sawButton = false
         let end = Date().addingTimeInterval(10)
         while Date() < end, !web.staticTexts["handler: yes"].exists || app.otherElements["unlocking"].exists
                 || app.otherElements["lock-screen"].exists {
             if app.buttons["unlock"].exists { sawButton = true }
-            if introStage(app) == "unlock" { sawUnlock = true }
             usleep(150_000)
         }
         XCTAssertTrue(studioShows(app), "Training, within 10 s of launch")
-        XCTAssertTrue(sawUnlock, "the unlock clip played")
+        // the test build's status line lists the intro's stages: the launch clip, the unlock clip, Training
+        XCTAssertTrue(waitStatus(app, contains: "intro launch>unlock>done", 5), "the unlock clip played: \(status(app))")
         XCTAssertFalse(sawButton, "no lock screen on the way")
     }
 

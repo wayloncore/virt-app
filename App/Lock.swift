@@ -25,7 +25,9 @@ import VirtCore
     @Published private(set) var note: String?
     @Published private(set) var checking = false
     /// The video intro's order of events (VirtCore's IntroFlow; Intro.swift plays it).
-    @Published private(set) var flow: IntroFlow
+    @Published private(set) var flow: IntroFlow {
+        didSet { if flow.stage != oldValue.stage { noteStage() } }
+    }
     let playback = IntroPlayback()
 
     private var policy: LockPolicy
@@ -80,6 +82,13 @@ import VirtCore
         } else {
             playback.showStill(animated: flow.reduceMotion && !introOff)
         }
+        noteStage()
+    }
+
+    /// The test build's status line lists the intro's stages ("launch>unlock>done"), so a test can check the order.
+    private func noteStage() {
+        Engine.shared.introSeen.append(flow.stage.rawValue)
+        Engine.shared.onChange?()
     }
 
     private var frozen: Bool { frozenLaunchAt != nil || frozenUnlockAt != nil }
