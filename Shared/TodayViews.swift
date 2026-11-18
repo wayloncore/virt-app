@@ -73,18 +73,22 @@ struct TodaySmall: View {
                 }
                 Text(s.title).font(.system(size: 20, weight: .semibold, design: .rounded)).foregroundStyle(.white)
                     .lineLimit(2).minimumScaleFactor(0.75).privacySensitive()
-                Text(s.statusLine).font(.footnote).foregroundStyle(.white.opacity(0.7)).lineLimit(1).minimumScaleFactor(0.8)
+                Text(s.statusLine).font(.footnote).foregroundStyle(.white.opacity(0.7)).lineLimit(2).minimumScaleFactor(0.8)
                 Spacer(minLength: 2)
-                HStack(spacing: 8) {
-                    WeekCount(s: s, size: 38, lineWidth: 4.5, showOf: false)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("\(s.weekDone) of \(s.weekPlanned)").font(.caption.weight(.semibold)).foregroundStyle(.white)
-                        Text(s.streakLine ?? "this week").font(.caption2).foregroundStyle(.white.opacity(0.6))
-                    }
-                    .lineLimit(1).minimumScaleFactor(0.8)
-                }
+                if s.hasData { weekRow }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private var weekRow: some View {
+        HStack(spacing: 8) {
+            WeekCount(s: s, size: 38, lineWidth: 4.5, showOf: false)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("\(s.weekDone) of \(s.weekPlanned)").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                Text(s.streakLine ?? "this week").font(.caption2).foregroundStyle(.white.opacity(0.6))
+            }
+            .lineLimit(1).minimumScaleFactor(0.8)
         }
     }
 }
@@ -136,6 +140,7 @@ struct WeekCircular: View {
             Text("\(s.weekDone)/\(s.weekPlanned)").font(.system(size: 17, weight: .bold, design: .rounded)).minimumScaleFactor(0.6)
         }
         .gaugeStyle(.accessoryCircularCapacity)
+        .tint(.white)
         .widgetAccentable()
         .accessibilityLabel(s.weekLine)
     }
@@ -198,8 +203,10 @@ struct WeekRectangular: View {
                 Text("\(s.weekDone)").font(.system(size: 18, weight: .bold, design: .rounded))
             }
             .gaugeStyle(.accessoryCircularCapacity)
+            .tint(.white)
             .widgetAccentable()
-            .frame(width: 52, height: 52)
+            .scaleEffect(56 / 76)
+            .frame(width: 56, height: 56)
             VStack(alignment: .leading, spacing: 0) {
                 Text("THIS WEEK").font(.system(size: 11, weight: .bold)).kerning(0.4).widgetAccentable()
                 Text("\(s.weekDone) of \(s.weekPlanned) done").font(.system(size: 17, weight: .semibold, design: .rounded))

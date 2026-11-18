@@ -113,7 +113,8 @@ final class TodayTests: XCTestCase {
     func testARestDay() {
         let s = wed { $0.kind = "rest"; $0.title = "Rest day"; $0.minutes = nil }.status(now: wedNoon, calendar: cal)
         XCTAssertEqual(s.day, .rest)
-        XCTAssertEqual(s.caption, "REST DAY")
+        XCTAssertEqual(s.caption, "TODAY")
+        XCTAssertEqual(s.title, "Rest day")
         XCTAssertEqual(s.statusLine, "Next: Fri")
         XCTAssertEqual(s.inlineLine, "Rest day · 1 of 3")
     }

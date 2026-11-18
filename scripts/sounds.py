@@ -5,7 +5,7 @@ notification sound, 30 seconds at most).
   sounds.py synth OUTDIR             makes the Chime style: clean synthesized bells (no downloads needed)
   sounds.py survey PACKDIR SHOTDIR   lists every sound in the Kenney packs with its length, level, pitch and decay,
                                      and draws spectrograms of the likely bells, chimes, ticks and clicks
-  sounds.py pick PACKDIR PICKS OUTDIR  trims and levels the files PICKS (a JSON file) names, into the Bell style
+  sounds.py pick PACKDIR PICKS OUTDIR  trims and levels the files PICKS (a JSON file) names, into the Digital style
 
 The Kenney packs are CC0 (App/Sounds/LICENSES.md). The workflow .github/workflows/sounds.yml downloads them on a
 GitHub runner (this repo never keeps the packs, only the few files picked from them).
@@ -199,7 +199,7 @@ def survey(packdir, shotdir):
 
 
 def pick(packdir, picks_path, outdir):
-    """PICKS: {"bell": {"go": {"file": "pack/Audio/x.ogg", "start": 0, "length": 1.2, "gain": 0}, ...}}"""
+    """PICKS: {"digital": {"go": {"file": "pack/Audio/x.ogg", "start": 0, "length": 1.2, "gain": 0}, ...}}"""
     picks = json.load(open(picks_path))
     os.makedirs(outdir, exist_ok=True)
     for style, cues in picks.items():

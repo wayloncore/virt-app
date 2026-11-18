@@ -141,11 +141,8 @@ public struct TodayStatus: Equatable, Sendable {
     /// The week ring, 0 to 1.
     public var ring: Double { weekPlanned > 0 ? min(1, max(0, Double(weekDone) / Double(weekPlanned))) : 0 }
 
-    /// "TODAY" or "REST DAY".
-    public var caption: String {
-        if !hasData { return "VIRT" }
-        return day == .rest ? "REST DAY" : "TODAY"
-    }
+    /// "TODAY" (the title says whether it's a rest day).
+    public var caption: String { hasData ? "TODAY" : "VIRT" }
 
     /// "Done", "About 45 min", "Rest and recover"... one short line under the title.
     public var statusLine: String {

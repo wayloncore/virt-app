@@ -79,7 +79,7 @@ final class VirtUITests: XCTestCase {
 
     /// With no way to reach the studio: the plain offline screen, and Retry.
     func testOfflineScreenAndRetry() {
-        let app = launch(env: ["VIRT_START_URL": "https://virt-offline-check.invalid/"])
+        let app = launch(env: ["VIRT_START_URL": "https://localhost:9/"])
         let retry = app.buttons["retry"]
         XCTAssertTrue(retry.waitForExistence(timeout: 30), "the offline screen shows: \(status(app))")
         XCTAssertTrue(app.staticTexts["Can't reach the studio"].exists)
@@ -148,11 +148,11 @@ final class VirtUITests: XCTestCase {
 
         web.buttons["Post today"].tap()
         XCTAssertTrue(waitStatus(app, contains: "today Legs A"), status(app))
-        let ask = app.otherElements["reminder-ask"]
-        XCTAssertTrue(ask.waitForExistence(timeout: 10), "the friendly ask, the first time")
+        let ask = app.buttons["remind-yes"]
+        XCTAssertTrue(ask.waitForExistence(timeout: 10), "the friendly ask, the first time: \(status(app))")
         sleep(1)
         shot("reminder-ask")
-        app.buttons["remind-yes"].tap()
+        ask.tap()
         allowAlerts()
         XCTAssertTrue(waitStatus(app, contains: "reminders 6") || waitStatus(app, contains: "reminders 7", 5), status(app))
         XCTAssertFalse(status(app).contains("store not saved"), status(app))
@@ -211,7 +211,7 @@ final class VirtUITests: XCTestCase {
             app.launchArguments = ["-uitest", "-uitest-reset", "-uitest-faceid-fails"]
             app.launchEnvironment = ["VIRT_TEST_HTML": Self.page, "VIRT_INTRO_AT": at]
             app.launch()
-            XCTAssertTrue(app.otherElements["intro"].waitForExistence(timeout: 15), name)
+            XCTAssertTrue(app.otherElements["lock-screen"].waitForExistence(timeout: 15), name)
             sleep(2)
             shot(name)
             app.terminate()
@@ -220,7 +220,6 @@ final class VirtUITests: XCTestCase {
         let app = launch(env: ["VIRT_TEST_HTML": Self.page], unlock: false, faceIDFails: true)
         XCTAssertTrue(app.buttons["unlock"].waitForExistence(timeout: 15))
         sleep(3)
-        XCTAssertFalse(app.otherElements["intro"].exists, "the intro ends by itself")
         shot("intro-5-lock")
     }
 

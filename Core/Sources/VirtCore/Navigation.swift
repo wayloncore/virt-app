@@ -65,7 +65,7 @@ public enum Navigation {
     public static let appBoundDomains = [
         "tyleralocke.com", "studio.tyleralocke.com", "proud-unit-177a.cloudflareaccess.com", "challenges.cloudflare.com",
         "accounts.google.com", "login.microsoftonline.com", "appleid.apple.com", "github.com",
-        // the UI tests' offline check (a .invalid name never resolves)
-        "virt-offline-check.invalid",
+        // the UI tests' offline check (nothing listens on localhost there)
+        "localhost",
     ]
 }

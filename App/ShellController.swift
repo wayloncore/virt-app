@@ -22,6 +22,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private var triedCache = false
     private var noSignal: UILabel?
     private var readyWork: DispatchWorkItem?
+    /// The last load error, for the test build's status line.
+    private var lastError = "none"
 
     init() {
         let env = ProcessInfo.processInfo.environment
@@ -264,6 +266,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private func failed(_ error: Error) {
         refresher.endRefreshing()
         let e = error as NSError
+        lastError = "\(e.domain) \(e.code)"
         let failing = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL
         if e.domain == WKError.errorDomain, e.code == WKError.Code.navigationAppBoundDomain.rawValue {
             // a page outside the studio's domains: Safari, not a dead end
@@ -483,7 +486,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private func updateStatusLine() {
         guard let l = statusLine else { return }
         let host = web?.url?.host ?? "none"
-        l.text = Engine.shared.status + " · host \(host)" + (errorHost != nil ? " · offline screen" : "")
+        l.text = Engine.shared.status + " · host \(host)" + (errorHost != nil ? " · offline screen" : "") + " · error \(lastError)"
         view.bringSubviewToFront(l.superview ?? l)
     }
 }

@@ -70,7 +70,7 @@ targets:
           - login.microsoftonline.com
           - appleid.apple.com
           - github.com
-          - virt-offline-check.invalid
+          - localhost
         # touch and hold the Virt icon
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: com.tyleralocke.virt.start

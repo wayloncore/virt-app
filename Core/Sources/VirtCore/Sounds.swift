@@ -27,8 +27,8 @@ public enum SoundCue: String, CaseIterable, Sendable {
 public enum SoundStyle: String, CaseIterable, Sendable {
     /// Clean synthesized bells, made for Virt.
     case chime
-    /// Picked from Kenney's free (CC0) sound packs.
-    case bell
+    /// Clean tones and clicks picked from Kenney's free (CC0) Interface Sounds.
+    case digital
     /// The first Virt chime, for every zero.
     case classic
 
@@ -37,7 +37,7 @@ public enum SoundStyle: String, CaseIterable, Sendable {
     public var name: String {
         switch self {
         case .chime: return "Chime"
-        case .bell: return "Bell"
+        case .digital: return "Digital"
         case .classic: return "Classic"
         }
     }
@@ -45,7 +45,7 @@ public enum SoundStyle: String, CaseIterable, Sendable {
     public var detail: String {
         switch self {
         case .chime: return "Soft bells, rising for go and falling for rest"
-        case .bell: return "Brighter bells and clicks"
+        case .digital: return "Clean tones: a rising run for go, a falling one for rest"
         case .classic: return "The first Virt chime"
         }
     }
