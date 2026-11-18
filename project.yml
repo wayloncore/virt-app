@@ -46,9 +46,9 @@ targets:
         NSSupportsLiveActivities: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # pure black, no image: the launch clip (App/Intro.swift) starts from black
         UILaunchScreen:
           UIColorName: LaunchBlack
-          UIImageName: VirtMark
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIRequiresFullScreen: true
         NSCameraUsageDescription: "Virt uses the camera only when you take a photo for a studio page."
