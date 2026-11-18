@@ -10,7 +10,7 @@ notification sound, 30 seconds at most).
 The Kenney packs are CC0 (App/Sounds/LICENSES.md). The workflow .github/workflows/sounds.yml downloads them on a
 GitHub runner (this repo never keeps the packs, only the few files picked from them).
 
-Needs numpy; `survey` and `pick` also need soundfile (to read .ogg) and matplotlib (for the spectrograms).
+Needs numpy; `survey` and `pick` also need soundfile (to read .ogg) and Pillow (for the spectrograms).
 """
 import json, os, struct, sys
 
@@ -165,9 +165,7 @@ def stft_db(x, n=1024, hop=256):
 
 
 def survey(packdir, shotdir):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    from PIL import Image, ImageDraw
 
     os.makedirs(shotdir, exist_ok=True)
     rows = []
@@ -184,19 +182,20 @@ def survey(packdir, shotdir):
         print(f"SOUND {rel} | {s['len']:.2f}s peak {s['peak_db']:.1f} rms {s['rms_db']:.1f} attack {s['attack_ms']:.0f}ms "
               f"decay30 {s['decay30']:.2f}s centroid {s['centroid']:.0f} dom {s['dominant']:.0f} tonal {s['tonal']:.0f}")
     likely = [r for r in rows if any(w in os.path.basename(r[0]).lower() for w in LIKELY)]
+    # a contact sheet: each sound's spectrogram (0 to 8 kHz up, 0 to 1 s across), 4 across
+    w, h, cols = 320, 170, 4
     for i in range(0, len(likely), 24):
         group = likely[i:i + 24]
-        fig, axes = plt.subplots(6, 4, figsize=(16, 15))
-        for ax, (rel, s, x) in zip(axes.flat, group):
-            d = stft_db(x[: int(1.5 * RATE)])
-            ax.imshow(d, origin="lower", aspect="auto", cmap="magma", vmin=d.max() - 80, vmax=d.max(),
-                      extent=[0, len(x[: int(1.5 * RATE)]) / RATE, 0, 8000])
-            ax.set_title(f"{rel.split('/')[-1]} {s['len']:.2f}s dom {s['dominant']:.0f}", fontsize=8)
-            ax.tick_params(labelsize=6)
-        for ax in list(axes.flat)[len(group):]:
-            ax.axis("off")
-        fig.savefig(os.path.join(shotdir, f"spectro-{i // 24 + 1}.png"), dpi=60)
-        plt.close(fig)
+        sheet = Image.new("RGB", (cols * w, ((len(group) + cols - 1) // cols) * h), (12, 10, 9))
+        draw = ImageDraw.Draw(sheet)
+        for k, (rel, s, x) in enumerate(group):
+            d = stft_db(x[:RATE])
+            d = np.clip((d - (d.max() - 70)) / 70, 0, 1)[::-1]
+            img = Image.fromarray(np.uint8(np.stack([d * 255, d * 200, d * 130], -1))).resize((w - 10, h - 30))
+            ox, oy = (k % cols) * w + 5, (k // cols) * h + 25
+            sheet.paste(img, (ox, oy))
+            draw.text((ox, oy - 20), f"{rel.split('/')[-1]}  {s['len']:.2f}s", fill=(240, 220, 180))
+        sheet.save(os.path.join(shotdir, f"spectro-{i // 24 + 1}.png"))
 
 
 def pick(packdir, picks_path, outdir):

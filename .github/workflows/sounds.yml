@@ -26,9 +26,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
       - name: Tools
         run: |
-          python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" -q install numpy==2.2.4 matplotlib==3.10.1 soundfile==0.13.1
+          python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" -q install numpy==2.2.4 pillow==11.1.0 soundfile==0.13.1
       - name: Download the Kenney packs (CC0)
         run: |
           # kenney.nl refuses automated downloads (403 to a runner, Nov 17), so this doesn't use it. Kenney posts the
