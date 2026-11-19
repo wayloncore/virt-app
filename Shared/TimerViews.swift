@@ -27,36 +27,43 @@ struct LockScreenTimer: View {
 
     /// StandBy scales this whole view up to fill the screen, so the clock gets most of the room.
     private var dimmedBody: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .lastTextBaseline, spacing: 12) {
                 Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
-                NextLine(d: d)
+                Spacer(minLength: 4)
+                ClockText(d: d).font(.system(size: 58, weight: .bold, design: .rounded)).foregroundStyle(Color.virtGold)
+                    .lineLimit(1).minimumScaleFactor(0.6)
             }
-            Spacer(minLength: 4)
-            ClockText(d: d).font(.system(size: 58, weight: .bold, design: .rounded)).foregroundStyle(Color.virtGold)
-                .lineLimit(1).minimumScaleFactor(0.6)
+            // its own row, the card's whole width: beside the clock it was cut off ("Next: set 3 of 4 · 105…")
+            NextLine(d: d)
         }
         .padding(16)
     }
 
     private var fullBody: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    // with a set to log next, its exercise takes the day's place (the next line says which set)
-                    Text((d.setExercise ?? title).uppercased()).font(.caption.weight(.semibold)).foregroundStyle(Color.virtGold.opacity(0.8))
-                        .lineLimit(1)
-                    Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(.white).lineLimit(1)
-                    NextLine(d: d)
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .lastTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        // with a set to log next, its exercise takes the day's place (the next line says which set)
+                        Text((d.setExercise ?? title).uppercased()).font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.virtGold.opacity(0.8)).lineLimit(1)
+                        Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(.white).lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    ClockText(d: d).font(.system(size: 46, weight: .bold, design: .rounded)).foregroundStyle(Color.virtGold)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                 }
-                Spacer(minLength: 8)
-                ClockText(d: d).font(.system(size: 46, weight: .bold, design: .rounded)).foregroundStyle(Color.virtGold)
-                    .lineLimit(1).minimumScaleFactor(0.6)
+                // its own row under the clock, the card's whole width: squeezed beside the clock it was cut off
+                // ("Next: set 3 of 4 · 105…") and the clock shrank too. The tighter padding keeps the card inside the
+                // lock screen's 160-point limit.
+                NextLine(d: d)
             }
             Bar(d: d)
             Buttons(d: d).frame(maxWidth: .infinity)
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }
 
@@ -145,17 +152,41 @@ struct NextLine: View {
         return d.next.isEmpty || d.next == "Done" ? (d.next == "Done" ? "Last one" : " ") : "Next: \(d.next)"
     }
 
+    /// The Dynamic Island's whole next set, split after the exercise when it's too wide for one line.
+    private var split: (exercise: String, detail: String)? {
+        guard full, let ex = d.setExercise, let detail = d.setDetail, d.nextSet == "\(ex) · \(detail)" else { return nil }
+        return (ex, detail)
+    }
+
     var body: some View {
+        Group {
+            if let split {
+                // one line where it fits; otherwise "Next: Chest press machine", then "set 3 of 4 · 105 × 10" under it
+                ViewThatFits(in: .horizontal) {
+                    row(nextWords)
+                    VStack(spacing: 1) {
+                        row("Next: \(split.exercise)")
+                        Text(split.detail).foregroundStyle(.white.opacity(0.75)).lineLimit(1).minimumScaleFactor(0.85)
+                    }
+                }
+            } else {
+                row(nextWords)
+            }
+        }
+        .font(.subheadline)
+    }
+
+    private func row(_ words: String) -> some View {
         HStack(spacing: 4) {
             if d.paused { Text("Paused ·").foregroundStyle(Color.virtGold) }
-            Text(nextWords)
+            Text(words)
                 .foregroundStyle(.white.opacity(0.75))
                 .lineLimit(1)
+                .minimumScaleFactor(full ? 1 : 0.85)
             if let n = d.nextEndsAt, let end = d.endsAt, end < n {
                 Text(timerInterval: end...n, countsDown: true, showsHours: false).monospacedDigit().foregroundStyle(.white.opacity(0.5))
             }
         }
-        .font(.subheadline)
     }
 }
 

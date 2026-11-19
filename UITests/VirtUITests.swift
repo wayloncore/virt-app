@@ -221,6 +221,9 @@ final class VirtUITests: XCTestCase {
         app.buttons["Activity"].tap()
         sleep(1)
         shot("widgets-activity")
+        app.swipeUp()
+        sleep(1)
+        shot("widgets-activity-2")
     }
 
     /// Log set (wayloncore/tyleralocke#573): the page names the next set, the Live Activity shows it between sets,
@@ -261,6 +264,10 @@ final class VirtUITests: XCTestCase {
         shot("logset-resting")
         XCUIDevice.shared.press(.home)
         sleep(1)
+        // the Dynamic Island expanded (a long press on it), the rest with the next set under the buttons
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.03)).press(forDuration: 1.2)
+        sleep(2)
+        shot("logset-island-expanded")
         app.activate()
 
         XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 10))
