@@ -55,7 +55,8 @@ public struct TimerDisplay: Codable, Hashable, Sendable {
     public func current(at now: Date) -> TimerDisplay {
         guard !paused, betweenSets != true, let e = endsAt, e <= now else { return self }
         let steps = later ?? []
-        if let k = steps.firstIndex(where: { $0.endsAt > now }) {
+        // the step running now; past the last zero, the last step (at 0:00)
+        if let k = steps.firstIndex(where: { $0.endsAt > now }) ?? (steps.isEmpty ? nil : steps.count - 1) {
             let s = steps[k]
             var d = self
             d.id = s.id; d.kind = s.kind; d.label = s.label
