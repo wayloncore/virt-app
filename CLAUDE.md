@@ -53,6 +53,10 @@ The contract is the website's `docs/kinetic/bridge.md` (`src/lib/training/kineti
 lock-screen buttons back as `kinetic:command` events. Don't change the website from here: if Virt needs more, open a
 small `queue` issue in wayloncore/tyleralocke describing an additive change. Virt also reads `today` and
 `set.logged`, sends `startToday` and `rest { seconds }`, and sets `window.kineticApp` before the page loads (#533, #550).
+Log set (#573): Virt reads `set.next` (and `nextSet` on `timer.start`), the open exercise's next set, and sends
+`{ command: 'log', at }`. The Live Activity shows the next set under the rest, and between sets the next set with a big
+Log set; Log set starts the set's rest at once and shows the following set, since the page may be asleep
+(`TimerBoard.logSet`). The same intent is a Control Center control (`LogSetControl`, iOS 18, in the widget extension).
 Virt already reads an optional
 `upcoming` list on `timer.start` (the steps after this one, each `{ id, kind, label, endsAt }`) and schedules an alert
 at each of their zeros; until the page sends it, only the running step's zero sounds while the phone is locked.
