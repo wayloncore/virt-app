@@ -239,7 +239,8 @@ import WidgetKit
             return
         }
         if let d = display {
-            let content = ActivityContent(state: d, staleDate: d.endsAt?.addingTimeInterval(120))
+            // stale at the zero: the system draws it again then, and the view moves on to the step running now
+            let content = ActivityContent(state: d, staleDate: d.endsAt)
             if let a = activity, a.activityState == .active || a.activityState == .stale {
                 Task { await a.update(content) }
                 activityNote = "on"

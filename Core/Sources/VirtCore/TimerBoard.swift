@@ -268,15 +268,18 @@ public struct TimerBoard: Equatable, Sendable {
     public func alerts(now: Date) -> [PlannedAlert] {
         guard let c = countdown, !c.paused, let end = c.endsAt else { return [] }
         var out: [PlannedAlert] = []
-        if end > now { out.append(Self.alert(id: c.id, kind: c.kind, label: c.label, next: c.next, at: end, length: c.total)) }
+        // each zero's words come from the step that starts there (Tyler, Nov 18): its label and its length
+        let first = c.upcoming.first.map { (label: $0.step.label, length: $0.after) }
+        if end > now { out.append(Self.alert(id: c.id, kind: c.kind, label: c.label, next: c.next, at: end, length: c.total, starts: first, set: nextSet)) }
         var before = end
         for (i, u) in c.upcoming.enumerated() {
             let at = end.addingTimeInterval(u.after)
             defer { before = at }
             guard at > now else { continue }
-            let next = i + 1 < c.upcoming.count ? c.upcoming[i + 1].step.label : "Done"
-            out.append(Self.alert(id: u.step.id, kind: u.step.kind, label: u.step.label, next: next, at: at,
-                                  length: at.timeIntervalSince(before)))
+            let following = i + 1 < c.upcoming.count ? c.upcoming[i + 1] : nil
+            out.append(Self.alert(id: u.step.id, kind: u.step.kind, label: u.step.label, next: following?.step.label ?? "Done", at: at,
+                                  length: at.timeIntervalSince(before),
+                                  starts: following.map { (label: $0.step.label, length: $0.after - u.after) }))
         }
         return Array(out.prefix(Self.alertLimit))
     }
@@ -326,8 +329,12 @@ public struct TimerBoard: Equatable, Sendable {
             d.endsAt = e
             d.progressFrom = min(c.progressFrom, e)
             if let first = c.upcoming.first { d.nextEndsAt = e.addingTimeInterval(first.after) }
+            if !c.upcoming.isEmpty {
+                d.later = c.upcoming.map { LaterStep(id: $0.step.id, kind: $0.step.kind, label: $0.step.label, endsAt: e.addingTimeInterval($0.after)) }
+            }
         }
-        return d
+        // past its zero with the page asleep: the step that's running now, from the plan ahead
+        return d.current(at: now)
     }
 
     /// Keep the screen on while a timer is up, or while a workout is going and the page has spoken recently.
@@ -355,22 +362,47 @@ public struct TimerBoard: Equatable, Sendable {
 
     // MARK: - Alert wording
 
-    static func alert(id: String, kind: TimerKind, label: String, next: String, at: Date, length: TimeInterval? = nil) -> PlannedAlert {
+    /// The alert at one step's zero: one short line about what starts now, nothing about what just ended (Tyler,
+    /// Nov 18). Title "Work 5 of 6" with the step's length as the body ("1:00") when it's known; after a rest between
+    /// sets, "Go: Chest press, set 2 of 4"; after the last step, "Intervals done".
+    /// `starts` is the step that begins at this zero by itself (from `upcoming`); `set` is the next set to log.
+    static func alert(id: String, kind: TimerKind, label: String, next: String, at: Date, length: TimeInterval? = nil,
+                      starts: (label: String, length: TimeInterval)? = nil, set: NextSet? = nil) -> PlannedAlert {
         let title: String
-        switch kind {
-        case .rest: title = "Rest is over"
-        case .hold: title = "\(label): time"
-        case .work, .intervalRest: title = "\(label) done"
-        case .other: title = "\(label): time"
-        }
-        let body: String
-        switch next {
-        case "": body = "Time's up"
-        case "Done": body = "That was the last one"
-        case "Logged at the time": body = "Set logged"
-        default: body = "Up next: \(next)"
+        var body = ""
+        if let s = starts {
+            title = short(s.label)
+            body = TimerDisplay.clock(s.length)
+        } else if next == "Done" {
+            title = kind == .work || kind == .intervalRest ? "Intervals done" : "Workout done"
+        } else if next == "Logged at the time" {
+            title = "\(label) logged"
+        } else if kind == .rest {
+            title = go(next, set: set)
+        } else if !next.isEmpty {
+            title = short(next)  // an interval phase without the plan ahead: the page's next label
+        } else {
+            title = "\(label): time"
         }
         return PlannedAlert(identifier: "virt.timer.\(id)", fireAt: at, title: title, body: body,
                             cue: SoundCue.zero(after: kind), length: length)
+    }
+
+    /// "Work · round 5 of 6" or "Work, round 5 of 6" → "Work 5 of 6".
+    static func short(_ label: String) -> String {
+        var t = label
+        for joint in [" · round ", ", round ", " · interval ", ", interval "] { t = t.replacingOccurrences(of: joint, with: " ") }
+        return t
+    }
+
+    /// After a rest: "Go: Chest press, set 2 of 4" (from the next set the page named), "Go: Chest press, set 2" (from
+    /// the rest's own "set 2 of Chest press"), or "Go".
+    static func go(_ next: String, set: NextSet?) -> String {
+        if let n = set { return "Go: \(n.exercise), set \(n.set) of \(n.of)" }
+        if let r = next.range(of: #"^set (\d+) of (.+)$"#, options: .regularExpression), r.lowerBound == next.startIndex {
+            let parts = next.dropFirst(4).components(separatedBy: " of ")
+            if parts.count >= 2 { return "Go: \(parts.dropFirst().joined(separator: " of ")), set \(parts[0])" }
+        }
+        return next.isEmpty ? "Go" : "Go: \(next)"
     }
 }
