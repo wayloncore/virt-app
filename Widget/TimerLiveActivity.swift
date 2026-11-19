@@ -40,11 +40,11 @@ enum CommandSink {
 struct TimerLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: VirtTimerAttributes.self) { context in
-            LockScreenTimer(title: context.attributes.title, d: context.state)
+            LockScreenTimer(title: context.attributes.title, d: context.state.current(at: Date()))
                 .activityBackgroundTint(Color.virtBlack.opacity(0.92))
                 .activitySystemActionForegroundColor(.virtGold)
         } dynamicIsland: { context in
-            let d = context.state
+            let d = context.state.current(at: Date())
             let between = d.betweenSets == true
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {

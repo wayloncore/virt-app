@@ -35,6 +35,9 @@ public struct TimerDisplay: Codable, Hashable, Sendable {
     /// Between sets: the exercise, and the rest of its line ("set 2 of 4 · 105 × 10").
     public var setExercise: String?
     public var setDetail: String?
+    /// The steps after this one, each with its own end (the page's `upcoming`), so the activity can move on to the
+    /// step that's running when the page is asleep at a zero (`current(at:)`).
+    public var later: [LaterStep]?
 
     public init(id: String, kind: TimerKind, label: String, next: String, endsAt: Date? = nil, countsUpFrom: Date? = nil,
                 progressFrom: Date? = nil, paused: Bool = false, remaining: TimeInterval? = nil, fraction: Double? = nil,
@@ -45,10 +48,51 @@ public struct TimerDisplay: Codable, Hashable, Sendable {
         self.elapsed = elapsed
     }
 
+    /// What to show at `now`: this, until its zero; after it, the step from `later` that's running then (its label, its
+    /// countdown, and the one after it as next). After a rest with nothing following, the next set and Log set. The
+    /// Live Activity calls it when it draws (at each update, and at the stale date, which is this step's zero), and the
+    /// app when it refreshes, so neither waits at 0:00 for the page.
+    public func current(at now: Date) -> TimerDisplay {
+        guard !paused, betweenSets != true, let e = endsAt, e <= now else { return self }
+        let steps = later ?? []
+        if let k = steps.firstIndex(where: { $0.endsAt > now }) {
+            let s = steps[k]
+            var d = self
+            d.id = s.id; d.kind = s.kind; d.label = s.label
+            d.endsAt = s.endsAt
+            d.progressFrom = k == 0 ? e : steps[k - 1].endsAt
+            let rest = Array(steps[(k + 1)...])
+            d.next = rest.first?.label ?? "Done"
+            d.nextEndsAt = rest.first?.endsAt
+            d.later = rest.isEmpty ? nil : rest
+            d.remaining = nil; d.fraction = nil
+            return d
+        }
+        if kind == .rest, steps.isEmpty, let words = logButton {
+            var d = TimerDisplay(id: "set-after:\(id)", kind: .other, label: setExercise ?? label, next: "")
+            d.nextSet = nextSet; d.logButton = words; d.betweenSets = true
+            d.setExercise = setExercise; d.setDetail = setDetail
+            return d
+        }
+        return self
+    }
+
     /// A clock face for a number of seconds: 0:45, 1:30, 12:05. Rounds up, so 0:00 shows only at zero.
     public static func clock(_ seconds: TimeInterval) -> String {
         let s = max(0, Int(seconds.rounded(.up)))
         return "\(s / 60):" + String(format: "%02d", s % 60)
+    }
+}
+
+/// A step after the running one, as the Live Activity keeps it (saved-data rule: add optional fields only).
+public struct LaterStep: Codable, Hashable, Sendable {
+    public var id: String
+    public var kind: TimerKind
+    public var label: String
+    public var endsAt: Date
+
+    public init(id: String, kind: TimerKind, label: String, endsAt: Date) {
+        self.id = id; self.kind = kind; self.label = label; self.endsAt = endsAt
     }
 }
 

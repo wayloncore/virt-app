@@ -15,7 +15,7 @@ final class TimerBoardTests: XCTestCase {
         var b = TimerBoard()
         b.apply(.workoutStart(title: "Legs A"), now: s(0))
         b.apply(rest(0, 45), now: s(0))
-        XCTAssertEqual(b.alerts(now: s(0)), [PlannedAlert(identifier: "virt.timer.rest:0.0", fireAt: s(45), title: "Rest is over", body: "Up next: set 2 of Plank", cue: .go, length: 45)])
+        XCTAssertEqual(b.alerts(now: s(0)), [PlannedAlert(identifier: "virt.timer.rest:0.0", fireAt: s(45), title: "Rest over: set 2 of Plank", body: "Go", cue: .go, length: 45)])
         XCTAssertEqual(b.nextZero(now: s(1)), s(45))
         XCTAssertEqual(b.display(now: s(0))?.endsAt, s(45))
         XCTAssertEqual(b.display(now: s(0))?.progressFrom, s(0))
@@ -33,7 +33,7 @@ final class TimerBoardTests: XCTestCase {
         b.apply(.timerEnd(id: "rest:0.0"), now: s(60))
         XCTAssertNil(b.display(now: s(60)))
         b.apply(.timerStart(TimerStart(id: "hold:60", kind: .hold, label: "Plank", endsAt: s(105), startedAt: s(60), next: "Logged at the time")), now: s(60))
-        XCTAssertEqual(b.alerts(now: s(60)), [PlannedAlert(identifier: "virt.timer.hold:60", fireAt: s(105), title: "Plank: time", body: "Set logged", cue: .rest, length: 45)])
+        XCTAssertEqual(b.alerts(now: s(60)), [PlannedAlert(identifier: "virt.timer.hold:60", fireAt: s(105), title: "Plank done", body: "Set logged", cue: .rest, length: 45)])
         b.apply(.timerEnd(id: "hold:60"), now: s(105))
         XCTAssertTrue(b.alerts(now: s(105)).isEmpty)
         XCTAssertTrue(b.keepAwake(now: s(105)), "the workout is still going")
@@ -120,7 +120,7 @@ final class TimerBoardTests: XCTestCase {
         // today's page: one phase at a time, no plan ahead. Each phase's bar starts where the last one ended.
         var b = TimerBoard()
         b.apply(.timerStart(TimerStart(id: "int:0:0", kind: .work, label: "Work · round 1 of 3", endsAt: s(30), startedAt: s(0), next: "Recovery, round 1 of 3")), now: s(0))
-        XCTAssertEqual(b.alerts(now: s(0)).first?.title, "Work · round 1 of 3 done")
+        XCTAssertEqual(b.alerts(now: s(0)).first?.title, "Recovery, round 1 of 3", "names what starts at the zero")
         b.apply(.timerEnd(id: "int:0:0"), now: s(31))
         b.apply(.timerStart(TimerStart(id: "int:0:1", kind: .intervalRest, label: "Recovery · round 1 of 3", endsAt: s(45), startedAt: s(0), next: "Work, round 2 of 3")), now: s(31))
         XCTAssertEqual(b.display(now: s(31))?.progressFrom, s(30))
@@ -143,7 +143,8 @@ final class TimerBoardTests: XCTestCase {
         let a = b.alerts(now: s(0))
         XCTAssertEqual(a.map(\.fireAt), [s(30), s(45), s(75), s(90), s(120)], "every phase sounds at zero, even with the page asleep")
         XCTAssertEqual(a.last?.body, "That was the last one")
-        XCTAssertEqual(a[1].body, "Up next: Work · round 2 of 3")
+        XCTAssertEqual(a[1].title, "Work · round 2 of 3 · 0:30")
+        XCTAssertEqual(a.last?.title, "Intervals done")
         XCTAssertEqual(Set(a.map(\.identifier)).count, 5)
         XCTAssertEqual(b.display(now: s(0))?.nextEndsAt, s(45))
         XCTAssertEqual(b.alerts(now: s(50)).map(\.fireAt), [s(75), s(90), s(120)], "past zeros aren't scheduled again")
@@ -223,7 +224,7 @@ final class TimerBoardTests: XCTestCase {
         b.startNativeRest(seconds: 90, now: s(0))
         XCTAssertEqual(b.countdown?.id, "virt-rest:1763373600000")
         XCTAssertEqual(b.alerts(now: s(1)).map(\.fireAt), [s(90)])
-        XCTAssertEqual(b.alerts(now: s(1)).first?.title, "Rest is over")
+        XCTAssertEqual(b.alerts(now: s(1)).first?.title, "Rest over")
         XCTAssertEqual(b.alerts(now: s(1)).first?.body, "Time's up")
         XCTAssertTrue(b.keepAwake(now: s(1)))
         XCTAssertFalse(b.expireNative(now: s(89)), "not yet")
@@ -261,5 +262,69 @@ final class TimerBoardTests: XCTestCase {
         XCTAssertEqual(cues.dropFirst().first, .go, "recovery ends: back to work")
         let lengths = b.alerts(now: s(0)).map(\.length)
         XCTAssertEqual(lengths.dropFirst().first ?? nil, 15, "each phase knows its own length")
+    }
+
+    // MARK: - Each zero names what starts there, and the activity moves on by itself (Tyler, Nov 18)
+
+    /// Work 1:00, rest 1:00, work 1:00: the alert at work's zero names the rest and its length; at the rest's zero,
+    /// the next work; at the end, done.
+    func testAlertWordsAcrossWorkRestWork() {
+        var b = TimerBoard()
+        b.apply(.timerStart(TimerStart(id: "int:0:0", kind: .work, label: "Work · interval 1 of 2", endsAt: s(60), startedAt: s(0),
+                                       next: "Rest, interval 1 of 2", upcoming: [
+                                           Step(id: "int:0:1", kind: .intervalRest, label: "Rest · interval 1 of 2", endsAt: s(120)),
+                                           Step(id: "int:0:2", kind: .work, label: "Work · interval 2 of 2", endsAt: s(180)),
+                                       ])), now: s(0))
+        let a = b.alerts(now: s(0))
+        XCTAssertEqual(a.map(\.fireAt), [s(60), s(120), s(180)])
+        XCTAssertEqual(a.map(\.title), ["Rest · interval 1 of 2 · 1:00", "Work · interval 2 of 2 · 1:00", "Intervals done"])
+        XCTAssertEqual(a.map(\.body), ["Work · interval 1 of 2 done", "Rest · interval 1 of 2 done", "That was the last one"])
+    }
+
+    func testARestsZeroNamesTheNextSet() {
+        var b = TimerBoard()
+        b.apply(rest(0, 90, next: "set 2 of Chest press"), now: s(0))
+        XCTAssertEqual(b.alerts(now: s(0)).first?.title, "Rest over: set 2 of Chest press")
+    }
+
+    /// Just past a zero with the page asleep: the shown step is the next one, with its own end, and the one after it
+    /// as next. Past the last zero it stays on the last step.
+    func testTheActivityMovesOnAtEachZero() {
+        var b = TimerBoard()
+        b.apply(intervalWithPlan(), now: s(0))
+        let d = b.display(now: s(30.5))
+        XCTAssertEqual(d?.id, "int:0:1")
+        XCTAssertEqual(d?.label, "Recovery · round 1 of 3")
+        XCTAssertEqual(d?.endsAt, s(45))
+        XCTAssertEqual(d?.progressFrom, s(30))
+        XCTAssertEqual(d?.next, "Work · round 2 of 3")
+        XCTAssertEqual(d?.nextEndsAt, s(75))
+        XCTAssertEqual(b.display(now: s(80))?.label, "Recovery · round 2 of 3")
+        XCTAssertEqual(b.display(now: s(80))?.endsAt, s(90))
+        XCTAssertEqual(b.display(now: s(100))?.next, "Done")
+        XCTAssertNil(b.display(now: s(100))?.nextEndsAt)
+        XCTAssertEqual(b.display(now: s(121))?.label, "Work · round 3 of 3", "past the last zero: the last step at 0:00")
+        // the view does the same from the activity's saved content alone, at the moment it's drawn
+        let saved = b.display(now: s(0))!
+        XCTAssertEqual(saved.label, "Work · round 1 of 3")
+        XCTAssertEqual(saved.later?.count, 4)
+        XCTAssertEqual(saved.current(at: s(46)).label, "Work · round 2 of 3")
+        XCTAssertEqual(saved.current(at: s(46)).endsAt, s(75))
+        // paused: it stays put
+        b.apply(.pause, now: s(10))
+        XCTAssertEqual(b.display(now: s(40))?.label, "Work · round 1 of 3")
+    }
+
+    /// A rest that runs out with the page asleep and a set to log next: the activity shows that set and Log set.
+    func testARestRunsOutIntoTheNextSet() {
+        var b = TimerBoard()
+        b.apply(.workoutStart(title: "Upper A"), now: s(0))
+        b.apply(.setNext(NextSet(exercise: "Chest press", set: 2, of: 3, weight: 100, reps: 10, label: "Chest press · set 2 of 3 · 100 × 10", rest: 90)), now: s(0))
+        b.apply(rest(0, 90, next: "set 2 of Chest press"), now: s(0))
+        XCTAssertEqual(b.display(now: s(89))?.label, "Rest")
+        let after = b.display(now: s(91))
+        XCTAssertEqual(after?.betweenSets, true)
+        XCTAssertEqual(after?.logButton, "Log set 2")
+        XCTAssertEqual(after?.setDetail, "set 2 of 3 · 100 × 10")
     }
 }
