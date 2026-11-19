@@ -15,7 +15,7 @@ final class TimerBoardTests: XCTestCase {
         var b = TimerBoard()
         b.apply(.workoutStart(title: "Legs A"), now: s(0))
         b.apply(rest(0, 45), now: s(0))
-        XCTAssertEqual(b.alerts(now: s(0)), [PlannedAlert(identifier: "virt.timer.rest:0.0", fireAt: s(45), title: "Rest over: set 2 of Plank", body: "Go", cue: .go, length: 45)])
+        XCTAssertEqual(b.alerts(now: s(0)), [PlannedAlert(identifier: "virt.timer.rest:0.0", fireAt: s(45), title: "Go: Plank, set 2", body: "", cue: .go, length: 45)])
         XCTAssertEqual(b.nextZero(now: s(1)), s(45))
         XCTAssertEqual(b.display(now: s(0))?.endsAt, s(45))
         XCTAssertEqual(b.display(now: s(0))?.progressFrom, s(0))
@@ -33,7 +33,7 @@ final class TimerBoardTests: XCTestCase {
         b.apply(.timerEnd(id: "rest:0.0"), now: s(60))
         XCTAssertNil(b.display(now: s(60)))
         b.apply(.timerStart(TimerStart(id: "hold:60", kind: .hold, label: "Plank", endsAt: s(105), startedAt: s(60), next: "Logged at the time")), now: s(60))
-        XCTAssertEqual(b.alerts(now: s(60)), [PlannedAlert(identifier: "virt.timer.hold:60", fireAt: s(105), title: "Plank done", body: "Set logged", cue: .rest, length: 45)])
+        XCTAssertEqual(b.alerts(now: s(60)), [PlannedAlert(identifier: "virt.timer.hold:60", fireAt: s(105), title: "Plank logged", body: "", cue: .rest, length: 45)])
         b.apply(.timerEnd(id: "hold:60"), now: s(105))
         XCTAssertTrue(b.alerts(now: s(105)).isEmpty)
         XCTAssertTrue(b.keepAwake(now: s(105)), "the workout is still going")
@@ -120,7 +120,7 @@ final class TimerBoardTests: XCTestCase {
         // today's page: one phase at a time, no plan ahead. Each phase's bar starts where the last one ended.
         var b = TimerBoard()
         b.apply(.timerStart(TimerStart(id: "int:0:0", kind: .work, label: "Work · round 1 of 3", endsAt: s(30), startedAt: s(0), next: "Recovery, round 1 of 3")), now: s(0))
-        XCTAssertEqual(b.alerts(now: s(0)).first?.title, "Recovery, round 1 of 3", "names what starts at the zero")
+        XCTAssertEqual(b.alerts(now: s(0)).first?.title, "Recovery 1 of 3", "names what starts at the zero")
         b.apply(.timerEnd(id: "int:0:0"), now: s(31))
         b.apply(.timerStart(TimerStart(id: "int:0:1", kind: .intervalRest, label: "Recovery · round 1 of 3", endsAt: s(45), startedAt: s(0), next: "Work, round 2 of 3")), now: s(31))
         XCTAssertEqual(b.display(now: s(31))?.progressFrom, s(30))
@@ -142,8 +142,9 @@ final class TimerBoardTests: XCTestCase {
         b.apply(intervalWithPlan(), now: s(0))
         let a = b.alerts(now: s(0))
         XCTAssertEqual(a.map(\.fireAt), [s(30), s(45), s(75), s(90), s(120)], "every phase sounds at zero, even with the page asleep")
-        XCTAssertEqual(a.last?.body, "That was the last one")
-        XCTAssertEqual(a[1].title, "Work · round 2 of 3 · 0:30")
+        XCTAssertEqual(a.last?.body, "")
+        XCTAssertEqual(a[1].title, "Work 2 of 3")
+        XCTAssertEqual(a[1].body, "0:30")
         XCTAssertEqual(a.last?.title, "Intervals done")
         XCTAssertEqual(Set(a.map(\.identifier)).count, 5)
         XCTAssertEqual(b.display(now: s(0))?.nextEndsAt, s(45))
@@ -224,8 +225,8 @@ final class TimerBoardTests: XCTestCase {
         b.startNativeRest(seconds: 90, now: s(0))
         XCTAssertEqual(b.countdown?.id, "virt-rest:1763373600000")
         XCTAssertEqual(b.alerts(now: s(1)).map(\.fireAt), [s(90)])
-        XCTAssertEqual(b.alerts(now: s(1)).first?.title, "Rest over")
-        XCTAssertEqual(b.alerts(now: s(1)).first?.body, "Time's up")
+        XCTAssertEqual(b.alerts(now: s(1)).first?.title, "Go")
+        XCTAssertEqual(b.alerts(now: s(1)).first?.body, "")
         XCTAssertTrue(b.keepAwake(now: s(1)))
         XCTAssertFalse(b.expireNative(now: s(89)), "not yet")
         // the page heard the rest command and started its own
@@ -277,14 +278,17 @@ final class TimerBoardTests: XCTestCase {
                                        ])), now: s(0))
         let a = b.alerts(now: s(0))
         XCTAssertEqual(a.map(\.fireAt), [s(60), s(120), s(180)])
-        XCTAssertEqual(a.map(\.title), ["Rest · interval 1 of 2 · 1:00", "Work · interval 2 of 2 · 1:00", "Intervals done"])
-        XCTAssertEqual(a.map(\.body), ["Work · interval 1 of 2 done", "Rest · interval 1 of 2 done", "That was the last one"])
+        XCTAssertEqual(a.map(\.title), ["Rest 1 of 2", "Work 2 of 2", "Intervals done"])
+        XCTAssertEqual(a.map(\.body), ["1:00", "1:00", ""])
     }
 
     func testARestsZeroNamesTheNextSet() {
         var b = TimerBoard()
         b.apply(rest(0, 90, next: "set 2 of Chest press"), now: s(0))
-        XCTAssertEqual(b.alerts(now: s(0)).first?.title, "Rest over: set 2 of Chest press")
+        XCTAssertEqual(b.alerts(now: s(0)).first?.title, "Go: Chest press, set 2")
+        b.apply(.setNext(NextSet(exercise: "Chest press", set: 2, of: 4, label: "Chest press · set 2 of 4")), now: s(1))
+        XCTAssertEqual(b.alerts(now: s(1)).first?.title, "Go: Chest press, set 2 of 4")
+        XCTAssertEqual(b.alerts(now: s(1)).first?.body, "")
     }
 
     /// Just past a zero with the page asleep: the shown step is the next one, with its own end, and the one after it
@@ -326,5 +330,18 @@ final class TimerBoardTests: XCTestCase {
         XCTAssertEqual(after?.betweenSets, true)
         XCTAssertEqual(after?.logButton, "Log set 2")
         XCTAssertEqual(after?.setDetail, "set 2 of 3 · 100 × 10")
+    }
+
+    /// Tyler's example (Nov 18): at recovery 4 of 6's zero, "Work 5 of 6" and its length; at work's zero, the recovery.
+    func testTylersSixRounds() {
+        var b = TimerBoard()
+        b.apply(.timerStart(TimerStart(id: "int:0:7", kind: .intervalRest, label: "Recovery · round 4 of 6", endsAt: s(90), startedAt: s(0),
+                                       next: "Work, round 5 of 6", upcoming: [
+                                           Step(id: "int:0:8", kind: .work, label: "Work · round 5 of 6", endsAt: s(150)),
+                                           Step(id: "int:0:9", kind: .intervalRest, label: "Recovery · round 5 of 6", endsAt: s(240)),
+                                       ])), now: s(0))
+        let a = b.alerts(now: s(0))
+        XCTAssertEqual(a.prefix(2).map(\.title), ["Work 5 of 6", "Recovery 5 of 6"])
+        XCTAssertEqual(a.prefix(2).map(\.body), ["1:00", "1:30"])
     }
 }

@@ -270,7 +270,7 @@ public struct TimerBoard: Equatable, Sendable {
         var out: [PlannedAlert] = []
         // each zero's words come from the step that starts there (Tyler, Nov 18): its label and its length
         let first = c.upcoming.first.map { (label: $0.step.label, length: $0.after) }
-        if end > now { out.append(Self.alert(id: c.id, kind: c.kind, label: c.label, next: c.next, at: end, length: c.total, starts: first)) }
+        if end > now { out.append(Self.alert(id: c.id, kind: c.kind, label: c.label, next: c.next, at: end, length: c.total, starts: first, set: nextSet)) }
         var before = end
         for (i, u) in c.upcoming.enumerated() {
             let at = end.addingTimeInterval(u.after)
@@ -362,36 +362,47 @@ public struct TimerBoard: Equatable, Sendable {
 
     // MARK: - Alert wording
 
-    /// The alert at one step's zero. It names what starts now, not what just ended (Tyler, Nov 18): the next step's
-    /// label and length when it's known ("Recovery · round 1 of 6 · 1:00"), the next set after a rest ("Rest over:
-    /// set 2 of Chest press"), or that it's done ("Intervals done").
-    /// `starts` is the step that begins at this zero by itself (from `upcoming`), when known.
+    /// The alert at one step's zero: one short line about what starts now, nothing about what just ended (Tyler,
+    /// Nov 18). Title "Work 5 of 6" with the step's length as the body ("1:00") when it's known; after a rest between
+    /// sets, "Go: Chest press, set 2 of 4"; after the last step, "Intervals done".
+    /// `starts` is the step that begins at this zero by itself (from `upcoming`); `set` is the next set to log.
     static func alert(id: String, kind: TimerKind, label: String, next: String, at: Date, length: TimeInterval? = nil,
-                      starts: (label: String, length: TimeInterval)? = nil) -> PlannedAlert {
+                      starts: (label: String, length: TimeInterval)? = nil, set: NextSet? = nil) -> PlannedAlert {
         let title: String
-        let body: String
-        let interval = kind == .work || kind == .intervalRest
+        var body = ""
         if let s = starts {
-            title = "\(s.label) · \(TimerDisplay.clock(s.length))"
-            body = kind == .rest ? "Rest over" : "\(label) done"
+            title = short(s.label)
+            body = TimerDisplay.clock(s.length)
         } else if next == "Done" {
-            title = interval ? "Intervals done" : "\(label) done"
-            body = "That was the last one"
+            title = kind == .work || kind == .intervalRest ? "Intervals done" : "Workout done"
         } else if next == "Logged at the time" {
-            title = "\(label) done"
-            body = "Set logged"
+            title = "\(label) logged"
         } else if kind == .rest {
-            title = next.isEmpty ? "Rest over" : "Rest over: \(next)"
-            body = next.isEmpty ? "Time's up" : "Go"
+            title = go(next, set: set)
         } else if !next.isEmpty {
-            // an interval phase without the plan ahead: the page's next label ("Recovery, round 1 of 6")
-            title = next
-            body = "\(label) done"
+            title = short(next)  // an interval phase without the plan ahead: the page's next label
         } else {
             title = "\(label): time"
-            body = "Time's up"
         }
         return PlannedAlert(identifier: "virt.timer.\(id)", fireAt: at, title: title, body: body,
                             cue: SoundCue.zero(after: kind), length: length)
+    }
+
+    /// "Work · round 5 of 6" or "Work, round 5 of 6" → "Work 5 of 6".
+    static func short(_ label: String) -> String {
+        var t = label
+        for joint in [" · round ", ", round ", " · interval ", ", interval "] { t = t.replacingOccurrences(of: joint, with: " ") }
+        return t
+    }
+
+    /// After a rest: "Go: Chest press, set 2 of 4" (from the next set the page named), "Go: Chest press, set 2" (from
+    /// the rest's own "set 2 of Chest press"), or "Go".
+    static func go(_ next: String, set: NextSet?) -> String {
+        if let n = set { return "Go: \(n.exercise), set \(n.set) of \(n.of)" }
+        if let r = next.range(of: #"^set (\d+) of (.+)$"#, options: .regularExpression), r.lowerBound == next.startIndex {
+            let parts = next.dropFirst(4).components(separatedBy: " of ")
+            if parts.count >= 2 { return "Go: \(parts.dropFirst().joined(separator: " of ")), set \(parts[0])" }
+        }
+        return next.isEmpty ? "Go" : "Go: \(next)"
     }
 }
