@@ -6,7 +6,7 @@ import VirtCore
 /// run can screenshot them (a UI test can't place a widget on the Home Screen). Sizes are Apple's for a 6.1-6.3 inch
 /// iPhone: small 158 × 158, medium 338 × 158, Lock Screen circular 76 × 76, rectangular 172 × 76.
 struct WidgetGallery: View {
-    enum Page: String, CaseIterable { case home = "Home", lock = "Lock", standBy = "StandBy" }
+    enum Page: String, CaseIterable { case home = "Home", lock = "Lock", standBy = "StandBy", activity = "Activity" }
     @State private var page = Page.home
 
     let now = Date()
@@ -38,6 +38,7 @@ struct WidgetGallery: View {
                 case .home: home
                 case .lock: lock
                 case .standBy: standBy
+                case .activity: activity
                 }
             }
         }
@@ -115,6 +116,32 @@ struct WidgetGallery: View {
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous)), w: 370, h: 168, "Live Activity, Lock Screen")
             lockTile(LockScreenTimer(title: "Legs A", d: d).environment(\.isLuminanceReduced, true).background(Color.black)
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous)), w: 370, h: 110, "Live Activity, StandBy at night (dimmed)")
+        }
+        .padding(.vertical, 8)
+    }
+
+    /// The Live Activity's Lock Screen view with Log set (#573): resting with the next set under the clock, between
+    /// sets (the next set and Log set), and just after logging the last set of an exercise.
+    var activity: some View {
+        let press = NextSet(exercise: "Chest press machine", set: 3, of: 4, weight: 105, reps: 10,
+                            label: "Chest press machine · set 3 of 4 · 105 × 10", rest: 90)
+        var resting = TimerDisplay(id: "rest:1", kind: .rest, label: "Rest", next: "set 3 of Chest press machine",
+                                   endsAt: now.addingTimeInterval(64), progressFrom: now.addingTimeInterval(-26))
+        resting.nextSet = press.label; resting.logButton = "Log set 3"
+        resting.setExercise = press.exercise; resting.setDetail = press.detail
+        var between = TimerDisplay(id: "set:x:3", kind: .other, label: press.exercise, next: "")
+        between.nextSet = press.label; between.logButton = "Log set 3"; between.betweenSets = true
+        between.setExercise = press.exercise; between.setDetail = press.detail
+        var logged = between
+        logged.logButton = nil; logged.setDetail = "Logged · set 4 of 4 · 105 × 10"
+        func tile(_ d: TimerDisplay, _ name: String) -> some View {
+            lockTile(LockScreenTimer(title: "Upper A", d: d).background(Color.virtBlack.opacity(0.92))
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous)), w: 370, h: 160, name)
+        }
+        return VStack(spacing: 14) {
+            tile(resting, "Resting: the next set under the clock")
+            tile(between, "Between sets: the next set and Log set")
+            tile(logged, "Logged the last set, waiting for the page")
         }
         .padding(.vertical, 8)
     }

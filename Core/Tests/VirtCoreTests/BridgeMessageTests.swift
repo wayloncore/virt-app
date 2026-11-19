@@ -65,7 +65,7 @@ final class BridgeMessageTests: XCTestCase {
 
     func testCommandScript() {
         XCTAssertEqual(TimerCommand.add15.script, "window.dispatchEvent(new CustomEvent('kinetic:command', { detail: 'add15' }));")
-        XCTAssertEqual(Set(TimerCommand.allCases.map(\.rawValue)), ["skip", "add15", "minus15", "pause", "resume"], "the page's COMMANDS")
+        XCTAssertEqual(Set(TimerCommand.allCases.map(\.rawValue)), ["skip", "add15", "minus15", "pause", "resume", "log"], "the page's COMMANDS, and Log set (#573)")
     }
 
     func testClock() {

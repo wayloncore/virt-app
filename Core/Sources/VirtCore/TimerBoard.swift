@@ -59,12 +59,17 @@ public struct TimerBoard: Equatable, Sendable {
     /// The last countdown that ran to zero, and when: the next interval phase's bar starts there.
     public var lastEnd: (id: String, at: Date)?
     public var lastSummary: WorkoutSummary?
+    /// The set Log set would log (the page's `set.next`, #573). nil when there's none.
+    public var nextSet: NextSet?
+    /// The set Log set just logged, until the page answers (shown as "Logged" while there's nothing else to show).
+    public var justLogged: NextSet?
 
     public init() {}
 
     public static func == (a: TimerBoard, b: TimerBoard) -> Bool {
         a.workout == b.workout && a.countdown == b.countdown && a.lastMessageAt == b.lastMessageAt && a.lastButtonAt == b.lastButtonAt
             && a.lastEnd?.id == b.lastEnd?.id && a.lastEnd?.at == b.lastEnd?.at && a.lastSummary == b.lastSummary
+            && a.nextSet == b.nextSet && a.justLogged == b.justLogged
     }
 
     // MARK: - The page's messages (the page is the source of truth)
@@ -81,9 +86,15 @@ public struct TimerBoard: Equatable, Sendable {
             workout = nil
             countdown = nil
             lastEnd = nil
+            nextSet = nil
+            justLogged = nil
         case .timerStart(let s):
             if workout == nil { workout = Workout(title: "Workout", startedAt: now) }
             start(s, now: now)
+            if let n = s.nextSet { nextSet = n; justLogged = nil }
+        case .setNext(let n):
+            nextSet = n
+            justLogged = nil
         case .timerPause(let id, let remaining):
             guard var c = countdown, c.id == id else { return }
             c.paused = true
@@ -176,6 +187,7 @@ public struct TimerBoard: Equatable, Sendable {
     /// What a button does, before the page hears about it (the page may be asleep while the phone is locked). The
     /// page's own answer replaces this when it comes.
     public mutating func apply(_ command: TimerCommand, now: Date) {
+        if command == .log { return logSet(now: now) }
         guard var c = countdown else { return }
         lastButtonAt = now
         switch command {
@@ -211,6 +223,8 @@ public struct TimerBoard: Equatable, Sendable {
                 c.total = c.total.map { $0 + (moved - r) }
                 c.remaining = moved
             }
+        case .log:
+            return
         case .skip:
             if let first = c.upcoming.first, !c.paused {
                 // the next phase starts now, for its own length; the rest follow it
@@ -228,6 +242,23 @@ public struct TimerBoard: Equatable, Sendable {
             }
         }
         countdown = c
+    }
+
+    /// Log set (#573), before the page hears (it may be asleep while the phone is locked): the set's rest starts at
+    /// once when the plan gives one, and the next set shows as the page will most likely name it (the same exercise,
+    /// one set on), so Log set works again at the rest's zero with the page still asleep. The page logs each tap in
+    /// order, from the moment it was tapped, so its own rest lines up with this one. Nothing to log: nothing happens.
+    public mutating func logSet(now: Date) {
+        guard workout != nil, let n = nextSet else { return }
+        lastButtonAt = now
+        nextSet = n.following
+        justLogged = n
+        if let r = n.rest {
+            let id = Self.nativePrefix + String(Int((now.timeIntervalSince1970 * 1000).rounded()))
+            apply(.timerStart(TimerStart(id: id, kind: .rest, label: "Rest", endsAt: now.addingTimeInterval(TimeInterval(r)),
+                                         startedAt: now, next: n.after)), now: now)
+            lastMessageAt = now
+        }
     }
 
     // MARK: - What the app does with it
@@ -253,10 +284,36 @@ public struct TimerBoard: Equatable, Sendable {
     /// The first moment a countdown reaches zero from now (for the chime while the app is open).
     public func nextZero(now: Date) -> Date? { alerts(now: now).map(\.fireAt).min() }
 
-    /// What the Live Activity shows; nil when there's no timer (the activity ends).
+    /// What the Live Activity shows: the timer, with the next set under it; between sets (a workout going, no timer),
+    /// the next set and Log set; nil when there's neither (the activity ends).
     public func display(now: Date) -> TimerDisplay? {
-        guard let c = countdown else { return nil }
+        guard let c = countdown else {
+            let signs = [lastMessageAt, lastButtonAt].compactMap { $0 }
+            guard workout != nil, let last = signs.max(), now.timeIntervalSince(last) < Self.quietLimit else { return nil }
+            if let n = nextSet {
+                var d = TimerDisplay(id: "set:\(n.exercise):\(n.set)", kind: .other, label: n.exercise, next: "")
+                d.nextSet = n.label
+                d.logButton = "Log set \(n.set)"
+                d.betweenSets = true
+                d.setExercise = n.exercise
+                d.setDetail = n.detail
+                return d
+            }
+            // just logged the last set of an exercise with no rest: "Logged" until the page says what's next
+            guard let j = justLogged else { return nil }
+            var d = TimerDisplay(id: "logged:\(j.exercise):\(j.set)", kind: .other, label: j.exercise, next: "")
+            d.betweenSets = true
+            d.setExercise = j.exercise
+            d.setDetail = "Logged · " + j.detail
+            return d
+        }
         var d = TimerDisplay(id: c.id, kind: c.kind, label: c.label, next: c.next, paused: c.paused)
+        if let n = nextSet {
+            d.nextSet = n.label
+            d.logButton = "Log set \(n.set)"
+            d.setExercise = n.exercise
+            d.setDetail = n.detail
+        }
         if c.stopwatch {
             d.countsUpFrom = c.startedAt.addingTimeInterval(c.pausedTotal)
             if let p = c.pausedAt, let from = d.countsUpFrom { d.elapsed = max(0, p.timeIntervalSince(from)) }
