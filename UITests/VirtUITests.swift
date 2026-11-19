@@ -218,6 +218,55 @@ final class VirtUITests: XCTestCase {
         app.buttons["StandBy"].tap()
         sleep(1)
         shot("widgets-standby")
+        app.buttons["Activity"].tap()
+        sleep(1)
+        shot("widgets-activity")
+    }
+
+    /// Log set (wayloncore/tyleralocke#573): the page names the next set, the Live Activity shows it between sets,
+    /// and Log set reaches the page, which logs it and starts the rest (shown at once, before the page answers).
+    func testLogSetFromTheLockScreen() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), "the page sees the kinetic handler")
+        web.buttons["Open exercise"].tap()
+        allowAlerts()
+        XCTAssertTrue(waitStatus(app, contains: "next Chest press machine · set 2 of 4 · 105 × 10"), status(app))
+        XCTAssertTrue(status(app).contains("timer none"), status(app))
+        XCTAssertTrue(waitStatus(app, contains: "activity on", 5), "between sets, the activity shows the next set: \(status(app))")
+        XCUIDevice.shared.press(.home)
+        sleep(3)
+        shot("logset-island")
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.005))
+        top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.7)))
+        sleep(3)
+        shot("logset-between")
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+        app.activate()
+
+        // Log set (the same path as the Live Activity's button)
+        XCTAssertTrue(app.buttons["dbg-log"].waitForExistence(timeout: 10))
+        app.buttons["dbg-log"].tap()
+        XCTAssertTrue(web.staticTexts["logged: 1"].waitForExistence(timeout: 10), "the page logged the set")
+        XCTAssertTrue(web.staticTexts["command: log"].exists)
+        XCTAssertTrue(waitStatus(app, contains: "timer rest:"), "the page's rest took over: \(status(app))")
+        XCTAssertTrue(waitStatus(app, contains: "next Chest press machine · set 3 of 4 · 105 × 10"), status(app))
+        XCTAssertTrue(status(app).contains("alerts 1"), status(app))
+        XCUIDevice.shared.press(.home)
+        sleep(3)
+        top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.7)))
+        sleep(3)
+        shot("logset-resting")
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+        app.activate()
+
+        XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 10))
+        web.buttons["Finish"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "next none"), status(app))
+        XCTAssertTrue(waitStatus(app, contains: "activity off"), status(app))
     }
 
     /// The video intro's frames, held still (the test build's VIRT_INTRO_AT and VIRT_UNLOCK_AT, seconds into each
@@ -427,7 +476,9 @@ final class VirtUITests: XCTestCase {
     <p id="has">handler: no</p>
     <p><button onclick="go()" style="font-size: 20px">Start rest</button> <button onclick="fin()" style="font-size: 20px">Finish</button></p>
     <p><button onclick="today(false)">Post today</button> <button onclick="today(true)">Post done</button> <button onclick="post({ type: 'set.logged' })">Log set</button></p>
+    <p><button onclick="openEx()">Open exercise</button></p>
     <p id="cmd">command: none</p>
+    <p id="logged">logged: 0</p>
     <script>
     const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kinetic;
     document.getElementById('has').textContent = h ? 'handler: yes' : 'handler: no';
@@ -441,10 +492,25 @@ final class VirtUITests: XCTestCase {
         done, minutes: 45, weekDone: done ? 3 : 2, weekPlanned: 4, streakWeeks: 3, trainingDays: [0, 1, 2, 3, 4, 5, 6],
         usualTime: p(later.getHours()) + ':' + p(later.getMinutes()) });
     }
+    // Log set (#573): the open exercise's next set, as Training sends it, and the log command
+    let setNo = 2, logged = 0;
+    const nextSet = () => setNo > 4 ? null : { exercise: 'Chest press machine', set: setNo, of: 4, weight: 105, reps: 10,
+      label: 'Chest press machine · set ' + setNo + ' of 4 · 105 × 10', rest: 90 };
+    function openEx() { post({ type: 'workout.start', title: 'Bridge test' }); post({ type: 'set.next', next: nextSet() }); }
+    function logIt(at) {
+      if (!nextSet()) return;
+      logged++; setNo++;
+      document.getElementById('logged').textContent = 'logged: ' + logged;
+      post({ type: 'set.logged', exercise: 'Chest press machine' });
+      start = at; end = start + 90000; paused = false;
+      post(Object.assign(startMsg(), { nextSet: nextSet() }));
+      post({ type: 'set.next', next: nextSet() });
+    }
     function fin() { post({ type: 'timer.cancel', id: 'rest:' + start }); post({ type: 'workout.finish', summary: { mins: 1, exercises: 1, sets: 1, steps: 0 } }); }
     addEventListener('kinetic:command', (e) => {
       const c = typeof e.detail === 'string' ? e.detail : e.detail && e.detail.command;
       document.getElementById('cmd').textContent = 'command: ' + c + (c === 'rest' ? ' ' + e.detail.seconds : '');
+      if (c === 'log') { const at = e.detail && e.detail.at; logIt(typeof at === 'number' && at <= Date.now() ? at : Date.now()); }
       if (c === 'rest') { paused = false; start = Date.now(); end = start + e.detail.seconds * 1000; post({ type: 'workout.start', title: 'Bridge test' }); post(startMsg()); }
       if (c === 'add15' && !paused) { end += 15000; post(startMsg()); }
       if (c === 'pause' && !paused) { paused = true; left = end - Date.now(); post({ type: 'timer.pause', id: 'rest:' + start, remaining: left }); }

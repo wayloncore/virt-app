@@ -26,6 +26,15 @@ public struct TimerDisplay: Codable, Hashable, Sendable {
     public var nextEndsAt: Date?
     /// A paused stopwatch: the time it had run.
     public var elapsed: TimeInterval?
+    /// The next set to log, when the page says (#573): "Chest press machine · set 2 of 4 · 105 × 10".
+    public var nextSet: String?
+    /// The Log set button's words ("Log set 2"), when there's a set to log.
+    public var logButton: String?
+    /// True between sets: no timer running, so it shows the next set and Log set instead of a clock.
+    public var betweenSets: Bool?
+    /// Between sets: the exercise, and the rest of its line ("set 2 of 4 · 105 × 10").
+    public var setExercise: String?
+    public var setDetail: String?
 
     public init(id: String, kind: TimerKind, label: String, next: String, endsAt: Date? = nil, countsUpFrom: Date? = nil,
                 progressFrom: Date? = nil, paused: Bool = false, remaining: TimeInterval? = nil, fraction: Double? = nil,

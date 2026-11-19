@@ -10,6 +10,23 @@ struct VirtWidgets: WidgetBundle {
         TimerLiveActivity()
         TodayWidget()
         WeekWidget()
+        if #available(iOS 18.0, *) { LogSetControl() }
+    }
+}
+
+/// Log set in Control Center, on the Lock Screen's controls or the Action button (iOS 18, #573): the same intent as the
+/// Live Activity's Log set, which the system runs in the app, so it logs the open exercise's next set and starts its
+/// rest. With no workout open it does nothing.
+@available(iOS 18.0, *)
+struct LogSetControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.tyleralocke.virt.log-set") {
+            ControlWidgetButton(action: TimerCommandIntent(.log)) {
+                Label("Log set", systemImage: "checkmark.circle.fill")
+            }
+        }
+        .displayName("Log set")
+        .description("Logs the next set of the workout that's open in Virt, and starts its rest.")
     }
 }
 
@@ -28,26 +45,45 @@ struct TimerLiveActivity: Widget {
                 .activitySystemActionForegroundColor(.virtGold)
         } dynamicIsland: { context in
             let d = context.state
+            let between = d.betweenSets == true
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(Color.virtGold).lineLimit(1)
+                    Label(between ? (d.setExercise ?? d.label) : d.label, systemImage: between ? "dumbbell.fill" : symbol(d.kind))
+                        .font(.headline).foregroundStyle(Color.virtGold).lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    ClockText(d: d).font(.title2.weight(.semibold)).foregroundStyle(.white)
+                    if !between { ClockText(d: d).font(.title2.weight(.semibold)).foregroundStyle(.white) }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 8) {
-                        Bar(d: d)
-                        Buttons(d: d)
-                        NextLine(d: d)
+                    if between {
+                        // between sets: the next set and Log set (#573)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(d.setDetail ?? "").font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+                            if let words = d.logButton { LogButton(words: words, big: true) }
+                        }
+                    } else {
+                        VStack(spacing: 8) {
+                            Bar(d: d)
+                            Buttons(d: d)
+                            NextLine(d: d, full: true)
+                        }
                     }
                 }
             } compactLeading: {
-                Image(systemName: symbol(d.kind)).foregroundStyle(Color.virtGold)
+                Image(systemName: between ? "dumbbell.fill" : symbol(d.kind)).foregroundStyle(Color.virtGold)
             } compactTrailing: {
-                ClockText(d: d).foregroundStyle(Color.virtGold).frame(maxWidth: 52)
+                if between {
+                    Text(d.logButton.map { $0.replacingOccurrences(of: "Log set", with: "Set") } ?? "Done").font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.virtGold)
+                } else {
+                    ClockText(d: d).foregroundStyle(Color.virtGold).frame(maxWidth: 52)
+                }
             } minimal: {
-                ClockText(d: d).font(.caption2).foregroundStyle(Color.virtGold)
+                if between {
+                    Image(systemName: "dumbbell.fill").foregroundStyle(Color.virtGold)
+                } else {
+                    ClockText(d: d).font(.caption2).foregroundStyle(Color.virtGold)
+                }
             }
             .keylineTint(.virtGold)
         }

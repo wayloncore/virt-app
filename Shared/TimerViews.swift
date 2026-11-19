@@ -22,7 +22,7 @@ struct LockScreenTimer: View {
     @Environment(\.isLuminanceReduced) private var dimmed
 
     var body: some View {
-        if dimmed { dimmedBody } else { fullBody }
+        if d.betweenSets == true { BetweenSets(title: title, d: d, dimmed: dimmed) } else if dimmed { dimmedBody } else { fullBody }
     }
 
     /// StandBy scales this whole view up to fill the screen, so the clock gets most of the room.
@@ -43,7 +43,9 @@ struct LockScreenTimer: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(Color.virtGold.opacity(0.8))
+                    // with a set to log next, its exercise takes the day's place (the next line says which set)
+                    Text((d.setExercise ?? title).uppercased()).font(.caption.weight(.semibold)).foregroundStyle(Color.virtGold.opacity(0.8))
+                        .lineLimit(1)
                     Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(.white).lineLimit(1)
                     NextLine(d: d)
                 }
@@ -95,13 +97,58 @@ struct Bar: View {
     }
 }
 
+/// Between sets (no timer running): the next set, and a big Log set (#573).
+struct BetweenSets: View {
+    let title: String
+    let d: TimerDisplay
+    var dimmed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(Color.virtGold.opacity(0.8))
+                Label(d.setExercise ?? d.label, systemImage: "dumbbell.fill").font(.headline).foregroundStyle(.white).lineLimit(1)
+                Text(d.setDetail ?? "").font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+            }
+            if let words = d.logButton, !dimmed { LogButton(words: words, big: true) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+    }
+}
+
+/// Log set: logs the next set on the page, and starts its rest (the same path as the timer buttons).
+struct LogButton: View {
+    let words: String
+    var big = false
+
+    var body: some View {
+        Button(intent: TimerCommandIntent(.log)) {
+            Label(big ? words : "Log", systemImage: "checkmark")
+                .font((big ? Font.title3 : Font.body).weight(.semibold))
+                .frame(maxWidth: big ? .infinity : nil)
+                .foregroundStyle(Color.virtBlack)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.virtGold)
+        .accessibilityLabel(words)
+    }
+}
+
 struct NextLine: View {
     let d: TimerDisplay
+    /// The whole next set ("Chest press machine · set 3 of 4 · 105 × 10"), where the exercise isn't shown above it.
+    var full = false
+
+    var nextWords: String {
+        if let n = full ? d.nextSet : d.setDetail { return "Next: \(n)" }
+        return d.next.isEmpty || d.next == "Done" ? (d.next == "Done" ? "Last one" : " ") : "Next: \(d.next)"
+    }
 
     var body: some View {
         HStack(spacing: 4) {
             if d.paused { Text("Paused ·").foregroundStyle(Color.virtGold) }
-            Text(d.next.isEmpty || d.next == "Done" ? (d.next == "Done" ? "Last one" : " ") : "Next: \(d.next)")
+            Text(nextWords)
                 .foregroundStyle(.white.opacity(0.75))
                 .lineLimit(1)
             if let n = d.nextEndsAt, let end = d.endsAt, end < n {
@@ -112,7 +159,7 @@ struct NextLine: View {
     }
 }
 
-/// −15, pause or resume, +15, and skip (Stop for a stopwatch hold).
+/// −15, pause or resume, +15, and skip (Stop for a stopwatch hold); Log set when there's a set to log.
 struct Buttons: View {
     let d: TimerDisplay
 
@@ -126,6 +173,8 @@ struct Buttons: View {
                 Button(intent: TimerCommandIntent(.add15)) { Image(systemName: "goforward.15") }
             }
             Button(intent: TimerCommandIntent(.skip)) { Image(systemName: d.countsUpFrom == nil ? "forward.end.fill" : "stop.fill") }
+            // at the rest's zero the app may be asleep, so Log set stays on the timer too (#573)
+            if let words = d.logButton { LogButton(words: words) }
         }
         .buttonStyle(.bordered)
         .tint(.virtGold)

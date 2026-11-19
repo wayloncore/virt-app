@@ -159,6 +159,7 @@ import WidgetKit
             case .startToday: sentCommands.append("startToday")
             case .rest(let s): sentCommands.append("rest \(s)")
             case .timer(let t): sentCommands.append(t.rawValue)
+            case .log: sentCommands.append("log")
             }
         }
         if !commands.isEmpty { onChange?() }
@@ -172,9 +173,12 @@ import WidgetKit
 
     /// A lock-screen or Dynamic Island button, or the test build's buttons.
     func command(_ c: TimerCommand) {
-        board.apply(c, now: Date())
+        let now = Date()
+        if c == .log { askForAlerts() }
+        board.apply(c, now: now)
         refresh()
-        page?.send(c)
+        // Log set goes with the moment it was tapped, so the page's rest lines up with the one shown now (#573)
+        if c == .log { page?.send(page: .log(at: now)) } else { page?.send(c) }
     }
 
     func becameActive() {
@@ -295,6 +299,8 @@ import WidgetKit
             quietTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
                 Task { @MainActor in
                     UIApplication.shared.isIdleTimerDisabled = self.board.keepAwake(now: Date())
+                    // between sets, the activity goes once the workout's gone quiet
+                    if self.board.countdown == nil { self.updateActivity(now: Date()) }
                 }
             }
         } else if !on {
@@ -316,6 +322,7 @@ import WidgetKit
         parts.append(board.keepAwake(now: now) ? "awake on" : "awake off")
         parts.append("activity \(activityNote)")
         parts.append(board.workout.map { "workout \($0.title)" } ?? "no workout")
+        parts.append("next \(board.nextSet?.label ?? "none")")
         parts.append("today \(today?.title ?? "none")\(today?.done == true ? " done" : "")")
         parts.append("store \(SharedStore.note)")
         parts.append("reminders \(Reminders.shared.count) (ask \(askNote))")

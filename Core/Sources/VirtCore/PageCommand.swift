@@ -9,6 +9,8 @@ public enum PageCommand: Equatable, Sendable {
     case startToday
     /// Start a rest timer of this many seconds.
     case rest(seconds: Int)
+    /// Log the next set, as if tapped at `at` (wayloncore/tyleralocke#573).
+    case log(at: Date)
 
     /// The JavaScript that hands it to the page.
     public var script: String {
@@ -18,6 +20,9 @@ public enum PageCommand: Equatable, Sendable {
             return "window.dispatchEvent(new CustomEvent('kinetic:command', { detail: 'startToday' }));"
         case .rest(let s):
             return "window.dispatchEvent(new CustomEvent('kinetic:command', { detail: { command: 'rest', seconds: \(s) } }));"
+        case .log(let at):
+            let ms = Int((at.timeIntervalSince1970 * 1000).rounded())
+            return "window.dispatchEvent(new CustomEvent('kinetic:command', { detail: { command: 'log', at: \(ms) } }));"
         }
     }
 }
