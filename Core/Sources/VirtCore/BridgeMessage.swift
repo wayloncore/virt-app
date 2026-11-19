@@ -52,12 +52,12 @@ public struct NextSet: Codable, Equatable, Hashable, Sendable {
 
     /// What the set after this one is called, for a rest Virt starts itself: "set 3 of Chest press machine", or ""
     /// after the last set.
-    public var after: String { set < of ? "set \(set + 1) of \(exercise)" : "" }
+    public var after: String { self.set < of ? "set \(self.set + 1) of \(exercise)" : "" }
 
     /// The set after this one, as the page will most likely name it: the same exercise, the next set, the same weight
     /// and reps (the page carries them forward). nil after the last set (what's next is the page's to say).
     public var following: NextSet? {
-        guard set < of else { return nil }
+        guard self.set < of else { return nil }
         var n = self
         n.set = set + 1
         n.label = label.replacingOccurrences(of: "set \(set) of \(of)", with: "set \(set + 1) of \(of)")
