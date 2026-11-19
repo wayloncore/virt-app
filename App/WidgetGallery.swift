@@ -115,7 +115,7 @@ struct WidgetGallery: View {
             lockTile(LockScreenTimer(title: "Legs A", d: d).background(Color.virtBlack.opacity(0.92))
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous)), w: 370, h: 168, "Live Activity, Lock Screen")
             lockTile(LockScreenTimer(title: "Legs A", d: d).environment(\.isLuminanceReduced, true).background(Color.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous)), w: 370, h: 110, "Live Activity, StandBy at night (dimmed)")
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous)), w: 370, h: 130, "Live Activity, StandBy at night (dimmed)")
         }
         .padding(.vertical, 8)
     }
@@ -134,16 +134,43 @@ struct WidgetGallery: View {
         between.setExercise = press.exercise; between.setDetail = press.detail
         var logged = between
         logged.logButton = nil; logged.setDetail = "Logged · set 4 of 4 · 105 × 10"
-        func tile(_ d: TimerDisplay, _ name: String) -> some View {
+        func tile(_ d: TimerDisplay, _ name: String, w: CGFloat = 370) -> some View {
             lockTile(LockScreenTimer(title: "Upper A", d: d).background(Color.virtBlack.opacity(0.92))
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous)), w: 370, h: 160, name)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous)), w: w, h: 160, name)
         }
+        var paused = resting
+        paused.paused = true; paused.endsAt = nil; paused.remaining = 64; paused.fraction = 0.3
+        paused.setDetail = "set 10 of 12 · 102.5 × 12"; paused.nextSet = "Chest press machine · set 10 of 12 · 102.5 × 12"
         return VStack(spacing: 14) {
             tile(resting, "Resting: the next set under the clock")
             tile(between, "Between sets: the next set and Log set")
             tile(logged, "Logged the last set, waiting for the page")
+            // the smallest iPhone (iPhone SE, 375 points wide): the card is about 343 wide there
+            tile(resting, "Resting, iPhone SE width", w: 343)
+            tile(paused, "Paused, a long set, iPhone SE width", w: 343)
+            lockTile(islandBottom(resting), w: 362, h: 130, "Dynamic Island, expanded (bottom), 393-point iPhone")
+            lockTile(islandBottom(paused), w: 362, h: 130, "Dynamic Island, expanded, paused and long")
         }
         .padding(.vertical, 8)
+    }
+
+    /// The expanded Dynamic Island's bottom region, the same views as the extension's, at about its real width (a
+    /// test can't draw the island itself).
+    func islandBottom(_ d: TimerDisplay) -> some View {
+        VStack(spacing: 8) {
+            HStack {
+                Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(Color.virtGold).lineLimit(1)
+                Spacer()
+                ClockText(d: d).font(.title2.weight(.semibold)).foregroundStyle(.white)
+            }
+            Bar(d: d)
+            Buttons(d: d)
+            NextLine(d: d, full: true)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .clipShape(RoundedRectangle(cornerRadius: 44, style: .continuous))
     }
 }
 #endif
