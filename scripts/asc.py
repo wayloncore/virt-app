@@ -3,7 +3,9 @@
 never prints a key.
 
   asc.py ready               checks the key works, registers the two App IDs if they're missing (the app and its
-                             timer extension), and checks the App Store Connect app exists
+                             timer extension), turns on Sign in with Apple for the app's App ID if it's off (#578,
+                             Training for friends), and checks the App Store Connect app exists
+  asc.py signin              only the Sign in with Apple step
   asc.py signing OUTDIR      the App Store signing pieces: the distribution certificate and an App Store profile for
                              each bundle id
   asc.py wait BUILD          waits until build BUILD of version 1.0 is processed, then turns on internal testing
@@ -26,6 +28,8 @@ API = "https://api.appstoreconnect.apple.com"
 BUNDLE_ID = "com.tyleralocke.virt"
 # every bundle id the build signs, with the name its App ID gets if it has to be registered
 BUNDLES = {"com.tyleralocke.virt": "Virt", "com.tyleralocke.virt.timer": "Virt Timer"}
+# entitlements a bundle's profile must carry; a profile without them (made before the capability) is replaced
+NEEDS = {"com.tyleralocke.virt": [b"com.apple.developer.applesignin"]}
 # the env names the workflow reads each profile's name from
 PROFILE_ENV = {"com.tyleralocke.virt": "VIRT_PROFILE_NAME", "com.tyleralocke.virt.timer": "VIRT_TIMER_PROFILE_NAME"}
 VERSION = "1.0"
@@ -164,7 +168,7 @@ def signing(outdir):
 # ---------- App IDs ----------
 
 def bundle_id(identifier, register=True):
-    """The App ID's App Store Connect id, registering it first if it's missing (no capabilities: Virt needs none)."""
+    """The App ID's App Store Connect id, registering it first if it's missing (its capabilities: sign_in_with_apple)."""
     found = call("GET", "/v1/bundleIds" + q({"filter[identifier]": identifier, "limit": 20}))["data"]
     found = [b for b in found if b["attributes"]["identifier"] == identifier]
     if found:
@@ -188,7 +192,7 @@ def profile_for(identifier, cert_id):
                                              "include": "certificates", "limit": 50}))
     for p in found["data"]:
         certs = [c["id"] for c in p["relationships"]["certificates"]["data"] or []]
-        if p["attributes"]["profileState"] == "ACTIVE" and cert_id in certs:
+        if p["attributes"]["profileState"] == "ACTIVE" and cert_id in certs and carries(p, identifier):
             profile = p
     if profile:
         print(f"  App Store profile: found ({name})")
@@ -201,6 +205,27 @@ def profile_for(identifier, cert_id):
         "certificates": {"data": [{"type": "certificates", "id": cert_id}]}}}})["data"]
     print(f"  App Store profile: made ({name})")
     return profile
+
+
+def carries(profile, identifier):
+    """True if the profile has every entitlement the bundle needs (the profile's text names each one)."""
+    content = base64.b64decode(profile["attributes"].get("profileContent") or "")
+    return all(e in content for e in NEEDS.get(identifier, []))
+
+
+def sign_in_with_apple():
+    """Training for friends (#578): Sign in with Apple on the app's App ID, as its own primary App ID. Turning it on
+    makes the App ID's old profiles invalid; the next signing run makes fresh ones that carry it."""
+    bundle = bundle_id(BUNDLE_ID)
+    caps = [c["attributes"]["capabilityType"] for c in call("GET", f"/v1/bundleIds/{bundle}/bundleIdCapabilities")["data"]]
+    if "APPLE_ID_AUTH" in caps:
+        print("Sign in with Apple: already on the App ID")
+        return
+    call("POST", "/v1/bundleIdCapabilities", {"data": {"type": "bundleIdCapabilities", "attributes": {
+        "capabilityType": "APPLE_ID_AUTH",
+        "settings": [{"key": "APPLE_ID_AUTH_APP_CONSENT", "options": [{"key": "PRIMARY_APP_CONSENT"}]}]},
+        "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle}}}}})
+    print("Sign in with Apple: turned on for the App ID")
 
 
 def probe():
@@ -223,6 +248,7 @@ def probe():
 def ready():
     for b in BUNDLES:
         bundle_id(b)
+    sign_in_with_apple()
     app = the_app()
     print(f"App Store Connect app: {app['attributes']['name']} ({app['id']}), bundle id {app['attributes']['bundleId']}")
     print("READY")
@@ -336,6 +362,8 @@ if __name__ == "__main__":
         ready()
     elif cmd == "probe":
         probe()
+    elif cmd == "signin":
+        sign_in_with_apple()
     elif cmd == "signing":
         signing(sys.argv[2])
     elif cmd == "wait":

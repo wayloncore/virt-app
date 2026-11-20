@@ -8,9 +8,11 @@ final class VirtUITests: XCTestCase {
 
     /// Opens Virt. The test build answers for Face ID (`-uitest-skip-faceid`: Unlock works; `-uitest-faceid-fails`:
     /// it never does), and by default this taps Unlock, the way Tyler would.
-    func launch(env: [String: String] = [:], unlock: Bool = true, faceIDFails: Bool = false) -> XCUIApplication {
+    /// `args` adds the test build's door: `-uitest-door-none` (the first screen) or `-uitest-door-friend`; Tyler's
+    /// otherwise.
+    func launch(env: [String: String] = [:], unlock: Bool = true, faceIDFails: Bool = false, args: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-uitest", "-uitest-reset", faceIDFails ? "-uitest-faceid-fails" : "-uitest-skip-faceid"]
+        app.launchArguments = ["-uitest", "-uitest-reset", faceIDFails ? "-uitest-faceid-fails" : "-uitest-skip-faceid"] + args
         app.launchEnvironment = env
         app.launch()
         if unlock {
@@ -91,6 +93,62 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(reached, "the sign-in opened inside the app: \(status(app))")
         XCTAssertFalse(status(app).contains("offline screen"), "no offline screen: \(status(app))")
         XCTAssertEqual(app.state, .runningForeground, "nothing was sent to Safari")
+    }
+
+    // MARK: - Training for friends (#578, part 2)
+
+    /// A new phone: the two doors first. The friend's door asks the age, then shows Sign in with Apple (a simulator
+    /// can't finish it); Tyler's opens the studio's sign-in inside the app, as before.
+    func testTheTwoDoorsFirst() {
+        let app = launch(args: ["-uitest-door-none"])
+        let friend = app.buttons["door-friend"]
+        XCTAssertTrue(friend.waitForExistence(timeout: 15), "the first screen: the two doors")
+        XCTAssertTrue(app.buttons["door-tyler"].exists)
+        XCTAssertTrue(app.staticTexts["Training for friends"].exists)
+        XCTAssertTrue(app.staticTexts["Tyler's studio"].exists)
+        sleep(1)
+        shot("doors")
+
+        friend.tap()
+        let yes = app.buttons["age-yes"]
+        XCTAssertTrue(yes.waitForExistence(timeout: 5), "the 13+ question first")
+        yes.tap()
+        let apple = app.buttons["apple-sign-in"]
+        XCTAssertTrue(apple.waitForExistence(timeout: 5) || app.buttons["Sign in with Apple"].exists, "Sign in with Apple")
+        app.buttons["doors-back"].tap()
+
+        let tyler = app.buttons["door-tyler"]
+        XCTAssertTrue(tyler.waitForExistence(timeout: 5))
+        tyler.tap()
+        XCTAssertTrue(waitStatus(app, contains: "door tyler", 10), status(app))
+        let reached = waitStatus(app, contains: "cloudflareaccess.com", 40) || waitStatus(app, contains: "host studio.tyleralocke.com", 5)
+        XCTAssertTrue(reached, "Tyler's door opens the studio's sign-in inside the app: \(status(app))")
+        XCTAssertEqual(app.state, .runningForeground, "nothing was sent to Safari")
+    }
+
+    /// A friend signed in (a made-up session): train.time2play.live gets the session before its scripts run, the
+    /// kinetic bridge works there the same (a rest, its alert at zero, the Live Activity), and the page's own
+    /// "Sign out here" signs Virt out too, back to the first screen. The stand-in page talks like the friends' page
+    /// (the real one is a 404 until Tyler approves the training-friends switch).
+    func testFriendDoorOpensTraining() {
+        let token = "uitestfriendsession0123456789"
+        let app = launch(env: ["VIRT_TEST_HTML": Self.friendPage, "VIRT_FRIEND_TOKEN": token], args: ["-uitest-door-friend"])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["session: handed over"].waitForExistence(timeout: 20), "the page got the session: \(status(app))")
+        XCTAssertTrue(web.staticTexts["handler: yes"].exists, "the kinetic bridge on train.time2play.live")
+        XCTAssertTrue(waitStatus(app, contains: "door friend"), status(app))
+        XCTAssertTrue(status(app).contains("host train.time2play.live"), status(app))
+        sleep(2)
+        shot("friend-today")
+
+        web.buttons["Start rest"].tap()
+        allowAlerts()
+        XCTAssertTrue(waitStatus(app, contains: "timer rest:"), status(app))
+        XCTAssertTrue(status(app).contains("alerts 1"), "the alert at zero: \(status(app))")
+        XCTAssertTrue(status(app).contains("workout Full body A"), status(app))
+
+        web.buttons["Sign out here"].tap()
+        XCTAssertTrue(app.buttons["door-friend"].waitForExistence(timeout: 10), "signed out: the first screen")
     }
 
     /// With no way to reach the studio: the plain offline screen, and Retry.
@@ -473,6 +531,39 @@ final class VirtUITests: XCTestCase {
         button.tap()
         XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 8), "unlocked: the same page, right where it was")
     }
+
+    /// Stands in for train.time2play.live's Today (the friends' Training): its paper look, the session the app hands
+    /// over (window.T2P_SESSION, read once and deleted, as the page's client.js does), the kinetic bridge, and the
+    /// page's own "Sign out here" (data-sign-out).
+    static let friendPage = """
+    <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f4ede1"></head>
+    <body style="font: 17px -apple-system; margin: 0; padding: 20px 18px; background: #f4ede1; color: #2a1d12">
+    <p style="margin: 0; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #7a2232">Week 1 · Today</p>
+    <h1 style="font: italic 700 34px Georgia, serif; margin: 6px 0 4px">Full body A</h1>
+    <p style="margin: 0 0 16px; color: #6b5a4a">5 moves · about 45 minutes. This week finds your weights: one you could lift about 12 times.</p>
+    <ol style="padding-left: 22px; line-height: 1.9; margin: 0 0 18px">
+    <li>Goblet squat · 3 × 8–12</li><li>Dumbbell bench press · 3 × 8–12</li><li>Seated cable row · 3 × 8–12</li>
+    <li>Romanian deadlift · 3 × 8–12</li><li>Plank · 3 × 30 s</li></ol>
+    <p><button onclick="go()" style="font-size: 18px; padding: 10px 18px; border: 0; border-radius: 12px; background: #7a2232; color: #fff">Start rest</button>
+    <button onclick="fin()" style="font-size: 18px; padding: 10px 18px">Finish</button></p>
+    <p><button data-sign-out onclick="out()" style="font-size: 16px">Sign out here</button></p>
+    <p id="session" style="font-size: 13px; color: #6b5a4a">session: none</p>
+    <p id="has" style="font-size: 13px; color: #6b5a4a">handler: no</p>
+    <script>
+    const t = window.T2P_SESSION;
+    try { delete window.T2P_SESSION; } catch (e) {}
+    document.getElementById('session').textContent = typeof t === 'string' && /^[A-Za-z0-9]{16,200}$/.test(t) && window.T2P_SESSION === undefined ? 'session: handed over' : 'session: none';
+    const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kinetic;
+    document.getElementById('has').textContent = h ? 'handler: yes' : 'handler: no';
+    const post = (m) => h && h.postMessage(m);
+    let start = 0, end = 0;
+    function go() { start = Date.now(); end = start + 90000; post({ type: 'workout.start', title: 'Full body A' });
+      post({ type: 'timer.start', id: 'rest:' + start, kind: 'rest', label: 'Rest', endsAt: end, startedAt: start }); }
+    function fin() { post({ type: 'timer.cancel', id: 'rest:' + start }); post({ type: 'workout.finish', summary: { mins: 1, exercises: 1, sets: 1, steps: 0 } }); }
+    function out() { document.getElementById('session').textContent = 'signed out'; }
+    </script></body></html>
+    """
 
     /// Talks to the app the way studio Training does (docs/kinetic/bridge.md on the website).
     static let page = """

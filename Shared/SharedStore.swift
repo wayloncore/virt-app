@@ -37,6 +37,13 @@ enum SharedStore {
         return UserDefaults.standard.data(forKey: localKey).flatMap(TodayInfo.decodeStored)
     }
 
+    /// Forgets the saved `today` (switching who signs in: the widgets never show the last person's day).
+    static func clear() {
+        SecItemDelete(base(todayKey) as CFDictionary)
+        UserDefaults.standard.removeObject(forKey: localKey)
+        note = "cleared"
+    }
+
     private static func base(_ key: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: key,
          kSecAttrAccessGroup as String: group]

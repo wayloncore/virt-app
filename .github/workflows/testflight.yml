@@ -3,7 +3,7 @@
 # never submits anything for App Review.
 #
 # First a quick Linux check (no Mac minutes): the key works, both App IDs are registered (it registers a missing one),
-# and the App Store Connect app exists. `check_only` (or [ready] in a pushed commit's message) stops there.
+# Sign in with Apple is on for the app's App ID (it turns it on), and the App Store Connect app exists. `check_only` (or [ready] in a pushed commit's message) stops there.
 #
 # Keys: the App Store Connect key is written to a temp file only for each job and deleted at the end. The
 # distribution certificate's key is re-made from it each run (scripts/asc.py), so no signing key is stored anywhere.
@@ -140,7 +140,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" -c "Print :CFBundleVersion" "$APP/PlugIns/VirtTimer.appex/Info.plist"
           # the shared keychain group (widgets) in both, signed in
           for b in "$APP" "$APP/PlugIns/VirtTimer.appex"; do
-            echo "Entitlements of $(basename "$b"):"; codesign -d --entitlements - --xml "$b" 2>/dev/null | plutil -p - | grep -A3 -E "keychain|application-identifier" || true
+            echo "Entitlements of $(basename "$b"):"; codesign -d --entitlements - --xml "$b" 2>/dev/null | plutil -p - | grep -A3 -E "keychain|application-identifier|applesignin" || true
           done
       - name: Export and upload to App Store Connect
         env:

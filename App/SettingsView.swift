@@ -5,8 +5,26 @@ import VirtCore
 
 /// Virt's own settings and tips: a native sheet, because the page has no settings for these. Open it from the Home
 /// Screen icon (touch and hold, Settings and tips) or `virt://settings`.
+/// Who's signed in, for the settings sheet's Sign-in section, and what it can do.
+struct SettingsAccount {
+    var door: Door?
+    /// The friend's name ("Sam"); empty for Tyler's door.
+    var name: String
+    /// Switching waits until the workout's done.
+    var midWorkout: Bool
+    var leave: () -> Void
+    /// Deletes a friend's account: nil when it's done, otherwise why not.
+    var delete: () async -> String?
+}
+
 struct SettingsView: View {
+    var account: SettingsAccount
     var done: () -> Void
+
+    @State private var confirmLeave = false
+    @State private var confirmDelete = false
+    @State private var deleting = false
+    @State private var deleteNote: String?
 
     @State private var soundsOn = SoundBoard.shared.enabled
     @State private var style = SoundBoard.shared.style
@@ -17,6 +35,23 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    LabeledContent("Signed in", value: account.door == .friend ? (account.name.isEmpty ? "With Apple" : account.name) : "Tyler's studio")
+                        .accessibilityIdentifier("signed-in-as")
+                    Button("Switch sign-in") { confirmLeave = true }
+                        .disabled(account.midWorkout || deleting)
+                        .accessibilityIdentifier("switch-sign-in")
+                    if account.door == .friend {
+                        Button("Delete account", role: .destructive) { confirmDelete = true }
+                            .disabled(account.midWorkout || deleting)
+                            .accessibilityIdentifier("delete-account")
+                    }
+                } header: {
+                    Text("Sign-in")
+                } footer: {
+                    Text(signInFooter)
+                }
+
                 Section {
                     Toggle("Sounds", isOn: $soundsOn)
                         .onChange(of: soundsOn) { _, on in SoundBoard.shared.enabled = on }
@@ -85,10 +120,42 @@ struct SettingsView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", action: done).accessibilityIdentifier("settings-done") } }
         }
         .tint(.virtGold)
+        .alert("Switch sign-in?", isPresented: $confirmLeave) {
+            Button("Sign out", role: .destructive) { account.leave() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(account.door == .friend
+                 ? "You're signed out on this phone and Virt goes back to its first screen. Your training stays in your account."
+                 : "This phone signs out of the studio and Virt goes back to its first screen. Training's copy on this phone stays.")
+        }
+        .alert("Delete your account?", isPresented: $confirmDelete) {
+            Button("Delete", role: .destructive) {
+                deleting = true
+                deleteNote = nil
+                Task {
+                    deleteNote = await account.delete()
+                    deleting = false
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This deletes your Time2Play account and all of your training, for good. Apple asks you to confirm it's you.")
+        }
         .task {
             let s = await UNUserNotificationCenter.current().notificationSettings()
             alertsDenied = s.authorizationStatus == .denied
         }
+    }
+}
+
+extension SettingsView {
+    var signInFooter: String {
+        if account.midWorkout { return "Finish the workout first, then you can switch." }
+        if deleting { return "Deleting…" }
+        if let n = deleteNote { return n }
+        return account.door == .friend
+            ? "Signed in with Apple to your Time2Play account. Only you see your training: no AI and no analytics."
+            : "Studio Training, signed in with the studio's email code. Switch to use Training for friends instead."
     }
 }
 

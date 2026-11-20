@@ -35,6 +35,9 @@ targets:
         keychain-access-groups:
           - $(AppIdentifierPrefix)com.tyleralocke.virt
           - $(AppIdentifierPrefix)com.tyleralocke.virt.shared
+        # Training for friends (#578): Sign in with Apple. The App ID's capability is turned on by scripts/asc.py
+        # (`ready`), so the App Store profile carries it.
+        com.apple.developer.applesignin: [Default]
     info:
       path: App/Info.plist
       properties:
@@ -59,8 +62,9 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.tyleralocke.virt
             CFBundleURLSchemes: [virt]
-        # the web view is bound to the studio's domains so Training's service worker runs (offline); the same list
-        # as VirtCore's Navigation.appBoundDomains
+        # the web view is bound to the studio's domains (and train.time2play.live, the friends' Training) so Training's
+        # service worker and the kinetic bridge run; the same list as VirtCore's Navigation.appBoundDomains
+        # (DoorTests checks they match)
         WKAppBoundDomains:
           - tyleralocke.com
           - studio.tyleralocke.com
@@ -70,6 +74,7 @@ targets:
           - login.microsoftonline.com
           - appleid.apple.com
           - github.com
+          - train.time2play.live
         # touch and hold the Virt icon
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: com.tyleralocke.virt.start

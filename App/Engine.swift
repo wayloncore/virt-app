@@ -102,6 +102,23 @@ import WidgetKit
         onChange?()
     }
 
+    /// Someone signed out of a door (Virt's settings, or a friend's page): the widgets, Siri's "today" and the
+    /// reminders forget that person's day, any timer and its Live Activity end, and the friendly reminders ask comes
+    /// again for whoever signs in next.
+    func startFresh() {
+        board = TimerBoard()
+        queue = CommandQueue()
+        refresh()
+        today = nil
+        SharedStore.clear()
+        WidgetCenter.shared.reloadAllTimelines()
+        Reminders.shared.enabled = nil
+        Reminders.shared.movedTo = nil
+        askedAboutReminders = false
+        askNote = "not yet"
+        refreshReminders()
+    }
+
     func refreshReminders() {
         Reminders.shared.refresh(today: today, workoutGoing: board.workout != nil)
         onChange?()
