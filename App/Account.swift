@@ -46,7 +46,16 @@ enum FriendKeeper {
     private static let service = "com.tyleralocke.virt.friend"
     private static let account = "session"
 
+    #if DEBUG
+    /// The unsigned simulator build can't use the Keychain (no entitlements); its tests keep a copy here instead.
+    /// Debug only: a Release build keeps the session in the Keychain and nowhere else.
+    private static let testKey = "virt.friend.test-session"
+    #endif
+
     static func load() -> FriendSession? {
+        #if DEBUG
+        if let d = UserDefaults.standard.data(forKey: testKey) { return FriendSession.decode(d) }
+        #endif
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account, kSecReturnData as String: true]
         var out: AnyObject?
@@ -60,13 +69,21 @@ enum FriendKeeper {
         let add: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                   kSecAttrAccount as String: account, kSecValueData as String: data,
                                   kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
-        SecItemAdd(add as CFDictionary, nil)
+        let status = SecItemAdd(add as CFDictionary, nil)
+        #if DEBUG
+        if status != errSecSuccess { UserDefaults.standard.set(data, forKey: testKey) }
+        #else
+        _ = status
+        #endif
     }
 
     static func clear() {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account]
         SecItemDelete(q as CFDictionary)
+        #if DEBUG
+        UserDefaults.standard.removeObject(forKey: testKey)
+        #endif
     }
 }
 
