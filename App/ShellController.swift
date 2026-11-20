@@ -1,10 +1,12 @@
+import AuthenticationServices
 import SwiftUI
 import UIKit
 import VirtCore
 import WebKit
 
-/// The web view around studio Training: the studio's own screens and data, with the `kinetic` bridge, the sign-in kept
-/// inside the app, pull to refresh, a plain offline screen with Retry, and the status bar matched to the page.
+/// The web view around Training: studio Training through Tyler's door, or train.time2play.live through a friend's
+/// (Account.swift), with the `kinetic` bridge, the sign-in kept inside the app, pull to refresh, a plain offline screen
+/// with Retry, and the status bar matched to the page. With no door yet, the first screen (DoorsView) asks.
 final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, PageCommands {
     private var web: WKWebView!
     private let statusBack = UIView()
@@ -14,8 +16,18 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private var observers: [NSKeyValueObservation] = []
     private var barStyle: UIStatusBarStyle = .lightContent
     private var downloads: [WKDownload: URL] = [:]
-    private let startURL: URL
+    /// The test build's start page (VIRT_START_URL), instead of the door's.
+    private let startOverride: URL?
     private let testHTML: String?
+    /// The door in use; nil while the first screen asks.
+    private(set) var door: Door?
+    /// A friend's session (the friend's door only).
+    private var friendSession: FriendSession?
+    private var doorsHost: UIHostingController<DoorsView>?
+    /// The web view is bound to the app's domains (always, but for the test build's made-up offline page).
+    private var bound = true
+    /// Where Training starts for this door.
+    private var startURL: URL { startOverride ?? door?.home ?? Navigation.home }
     private let testing: Bool
     private var statusLine: UILabel?
     /// The saved copy has been tried once for the page that failed (OfflinePolicy).
@@ -29,11 +41,11 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         let env = ProcessInfo.processInfo.environment
         #if DEBUG
         testing = ProcessInfo.processInfo.arguments.contains("-uitest")
-        startURL = env["VIRT_START_URL"].flatMap(URL.init(string:)) ?? Navigation.home
+        startOverride = env["VIRT_START_URL"].flatMap(URL.init(string:))
         testHTML = env["VIRT_TEST_HTML"]
         #else
         testing = false
-        startURL = Navigation.home
+        startOverride = nil
         testHTML = nil
         _ = env
         #endif
@@ -60,10 +72,13 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         // unbound, with no bridge (WebKit allows the bridge only on bound domains)
         if ProcessInfo.processInfo.environment["VIRT_START_URL"] != nil { bound = false }
         #endif
+        self.bound = bound
         if bound {
             config.userContentController.add(BridgeHandler(), name: "kinetic")  // the website looks for exactly this name
-            config.userContentController.addUserScript(WKUserScript(source: Self.startScript, injectionTime: .atDocumentStart,
-                                                                    forMainFrameOnly: true))
+            // Virt's own: the friend's page says its "Sign out here" was tapped (FriendSignIn.signOutWatchScript)
+            let account = AccountHandler()
+            account.shell = self
+            config.userContentController.add(account, name: "virtAccount")
         }
         // bound to the studio's domains (Info.plist WKAppBoundDomains): that's what lets Training's service worker
         // run in the app, so it keeps working with no signal. Other sites already open in Safari (Navigation).
@@ -106,15 +121,161 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         showSplash()
         Engine.shared.page = self
         if testing { addTestStatus() }
-        CookieKeeper.restore(into: config.websiteDataStore.httpCookieStore) { [weak self] in self?.loadStart() }
+        CookieKeeper.restore(into: config.websiteDataStore.httpCookieStore) { [weak self] in self?.pickDoor() }
     }
 
     private func loadStart() {
+        guard let door else { return }
         if let html = testHTML {
-            web.loadHTMLString(html, baseURL: URL(string: "https://studio.tyleralocke.com/virt-bridge-test"))
+            let base = door == .friend ? Navigation.friendHome : URL(string: "https://studio.tyleralocke.com/virt-bridge-test")!
+            web.loadHTMLString(html, baseURL: base)
         } else {
             web.load(URLRequest(url: startURL))
         }
+    }
+
+    // MARK: - The doors (Account.swift)
+
+    /// At launch: the saved door, Tyler's on a phone that used Virt before doors existed, or the first screen.
+    private func pickDoor() {
+        if let saved = DoorStore.saved { return openDoor(Door(rawValue: saved)) }
+        DoorStore.usedBefore(cookies: web.configuration.websiteDataStore.httpCookieStore) { [weak self] used in
+            guard let self else { return }
+            if used { DoorStore.choose(.tyler) }
+            self.openDoor(used ? .tyler : nil)
+        }
+    }
+
+    /// Opens Training through a door, or the first screen (nil).
+    private func openDoor(_ d: Door?, note: String? = nil) {
+        friendSession = nil
+        if d == .friend {
+            guard let s = FriendKeeper.load(), s.usable(now: Date()) else {
+                FriendKeeper.clear()
+                DoorStore.leave()
+                return openDoor(nil, note: "Your sign-in ran out. Sign in again.")
+            }
+            friendSession = s
+        }
+        door = d
+        installScripts()
+        guard d != nil else { return showDoors(note: note) }
+        hideDoors()
+        loadStart()
+        if d == .friend { checkFriend() }
+        updateStatusLine()
+    }
+
+    /// The scripts each page gets before its own run: Virt's start hint, and on a friend's door the session handed
+    /// to train.time2play.live and the watch for its "Sign out here".
+    private func installScripts() {
+        guard bound else { return }
+        let ucc = web.configuration.userContentController
+        ucc.removeAllUserScripts()
+        ucc.addUserScript(WKUserScript(source: Self.startScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        if door == .friend, let s = friendSession, let handover = FriendSignIn.handoverScript(token: s.token) {
+            ucc.addUserScript(WKUserScript(source: handover, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            ucc.addUserScript(WKUserScript(source: FriendSignIn.signOutWatchScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+    }
+
+    /// A friend's session that the server says is gone: back to the first screen. No signal changes nothing.
+    private func checkFriend() {
+        if testing { return }  // the test build's session is made up
+        guard let s = friendSession else { return }
+        Task { @MainActor in
+            if await FriendAPI.check(s) == false, self.door == .friend, self.friendSession == s {
+                self.leaveDoor(note: "Your sign-in ran out. Sign in again.", signOutOnServer: false)
+            }
+        }
+    }
+
+    /// Signs out of the door in use and shows the first screen (Virt's settings, the friend's page signing out, a
+    /// session that ran out, a deleted account). The next person sees nothing of the last one's: the widgets,
+    /// reminders and Siri's "today" start fresh, a friend's session and their page's data on this phone are gone, and
+    /// Tyler's studio sign-in is gone (Training's own copy on the phone stays, so nothing he hasn't sent is lost).
+    func leaveDoor(note: String? = nil, signOutOnServer: Bool = true) {
+        let was = door
+        let session = friendSession
+        door = nil
+        friendSession = nil
+        DoorStore.leave()
+        installScripts()
+        Engine.shared.startFresh()
+        if presentedViewController != nil { dismiss(animated: true) }
+        web.stopLoading()
+        let data = web.configuration.websiteDataStore
+        switch was {
+        case .friend?:
+            FriendKeeper.clear()
+            if signOutOnServer, let s = session { Task { await FriendAPI.signOut(s) } }
+            let all = WKWebsiteDataStore.allWebsiteDataTypes()
+            data.fetchDataRecords(ofTypes: all) { records in
+                data.removeData(ofTypes: all, for: records.filter { $0.displayName.hasSuffix("time2play.live") }) {}
+            }
+        case .tyler?:
+            CookieKeeper.signOut(of: data.httpCookieStore) {}
+        case nil:
+            break
+        }
+        web.load(URLRequest(url: URL(string: "about:blank")!))
+        showDoors(note: note)
+    }
+
+    /// The friend tapped the page's own "Sign out here".
+    func pageSignedOut() {
+        guard door == .friend else { return }
+        leaveDoor()
+    }
+
+    /// Delete account (Virt's settings, a friend only): a fresh Sign in with Apple so the server can revoke it, then
+    /// the server deletes the Time2Play account and all of its Training. nil when it's done; otherwise why not.
+    func deleteFriendAccount() async -> String? {
+        guard door == .friend, let s = friendSession else { return "Only a friend's account can be deleted here." }
+        var code: String?
+        do {
+            let c = try await AppleAuth().request()
+            code = c.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
+        } catch {
+            if (error as? ASAuthorizationError)?.code == .canceled { return "Not deleted." }
+            // no fresh code: the server still deletes everything, it just can't revoke Sign in with Apple
+        }
+        guard await FriendAPI.delete(s, authorizationCode: code) else {
+            return "Couldn't delete the account. Check the connection and try again."
+        }
+        leaveDoor(note: "Your account and its training are deleted.", signOutOnServer: false)
+        return nil
+    }
+
+    private func showDoors(note: String?) {
+        hideSplash()
+        removeError()
+        hideDoors()
+        let host = UIHostingController(rootView: DoorsView(opened: { [weak self] d in
+            DoorStore.choose(d)
+            self?.openDoor(d)
+        }, note: note))
+        host.view.backgroundColor = .virtBlack
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        addChild(host)
+        view.addSubview(host.view)
+        NSLayoutConstraint.activate([
+            host.view.topAnchor.constraint(equalTo: view.topAnchor), host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        host.didMove(toParent: self)
+        doorsHost = host
+        barStyle = .lightContent
+        setNeedsStatusBarAppearanceUpdate()
+        updateStatusLine()
+    }
+
+    private func hideDoors() {
+        guard let h = doorsHost else { return }
+        h.willMove(toParent: nil)
+        h.view.removeFromSuperview()
+        h.removeFromParent()
+        doorsHost = nil
     }
 
     /// Runs before the page's own scripts: tells Training that Virt plays the lead-in, zero, set and finish sounds
@@ -146,16 +307,20 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     /// True while Training itself is showing (the test build's stand-in page counts).
     private var onTraining: Bool {
-        if testHTML != nil { return web.url?.path.hasPrefix("/virt-bridge-test") ?? false }
-        return Navigation.isTraining(web.url)
+        guard let door else { return false }
+        if testHTML != nil {
+            return door == .friend ? Navigation.isTraining(web.url, door: .friend) : (web.url?.path.hasPrefix("/virt-bridge-test") ?? false)
+        }
+        return Navigation.isTraining(web.url, door: door)
     }
 
     func goToToday(midWorkout: Bool) {
+        guard let door else { return }  // the first screen is up: nothing to open yet
         if errorHost != nil { return retry() }
         if testHTML != nil { return }
-        if Navigation.todayAction(current: web.url, midWorkout: midWorkout) == .loadHome {
+        if Navigation.todayAction(current: web.url, midWorkout: midWorkout, door: door) == .loadHome {
             Engine.shared.pageLoading()
-            web.load(URLRequest(url: Navigation.home))
+            web.load(URLRequest(url: door.home))
         }
     }
 
@@ -185,13 +350,18 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     func showSettings() {
         if let p = presentedViewController { p.dismiss(animated: false) }
-        let host = UIHostingController(rootView: SettingsView { [weak self] in self?.dismiss(animated: true) })
+        let account = SettingsAccount(door: door, name: friendSession?.name ?? "",
+                                      midWorkout: Engine.shared.board.midWorkout(now: Date()),
+                                      leave: { [weak self] in self?.leaveDoor() },
+                                      delete: { [weak self] in await self?.deleteFriendAccount() })
+        let host = UIHostingController(rootView: SettingsView(account: account) { [weak self] in self?.dismiss(animated: true) })
         present(host, animated: true)
     }
 
     // MARK: - Looks
 
     private func matchStatusBar() {
+        if doorsHost != nil { return }  // the first screen is black, whatever's in the web view behind it
         if let c = web.themeColor { return paintStatusBar(c) }
         // no theme color (Access's sign-in page): the page's own background
         web.evaluateJavaScript(Self.backgroundScript) { [weak self] v, _ in
@@ -241,7 +411,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         refresher.endRefreshing()
         hideSplash()
         errorHost?.view.removeFromSuperview()
-        let host = UIHostingController(rootView: OfflineView(detail: error.localizedDescription) { [weak self] in self?.retry() })
+        let host = UIHostingController(rootView: OfflineView(detail: error.localizedDescription,
+                                                             place: door == .friend ? "Training" : "the studio") { [weak self] in self?.retry() })
         host.view.backgroundColor = .virtBlack
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
@@ -258,18 +429,22 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         updateStatusLine()
     }
 
-    private func retry() {
-        triedCache = false
+    private func removeError() {
         errorHost?.willMove(toParent: nil)
         errorHost?.view.removeFromSuperview()
         errorHost?.removeFromParent()
         errorHost = nil
-        if web.url == nil || testHTML != nil { loadStart() } else { web.reload() }
+    }
+
+    private func retry() {
+        triedCache = false
+        removeError()
+        if web.url == nil || web.url?.scheme == "about" || testHTML != nil { loadStart() } else { web.reload() }
         updateStatusLine()
     }
 
     @objc private func pulled() {
-        if web.url == nil { loadStart() } else { web.reload() }
+        if web.url == nil || web.url?.scheme == "about" { loadStart(); refresher.endRefreshing() } else { web.reload() }
     }
 
     /// A load failed. Training works offline in its service worker, so the offline screen shows only when there's
@@ -327,7 +502,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if action.shouldPerformDownload { return decisionHandler(.download) }
         let main = action.targetFrame?.isMainFrame ?? true
-        var choice = Navigation.choose(action.request.url, mainFrame: main)
+        var choice = Navigation.choose(action.request.url, mainFrame: main, door: door ?? .tyler)
         #if DEBUG
         if choice == .openOutside, action.request.url?.host == startURL.host { choice = .load }  // the tests' start page
         #endif
@@ -424,7 +599,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url {
-            if Navigation.choose(url, mainFrame: true) == .load { webView.load(action.request) } else { UIApplication.shared.open(url) }
+            if Navigation.choose(url, mainFrame: true, door: door ?? .tyler) == .load { webView.load(action.request) } else { UIApplication.shared.open(url) }
         }
         return nil
     }
@@ -497,8 +672,11 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     private func updateStatusLine() {
         guard let l = statusLine else { return }
+        // the first screen shows on its own (its buttons sit where the status line does)
+        l.superview?.isHidden = doorsHost != nil
         let host = web?.url?.host ?? "none"
         l.text = Engine.shared.status + " · host \(host)" + (errorHost != nil ? " · offline screen" : "") + " · error \(lastError)"
+            + " · door \(door?.rawValue ?? (doorsHost != nil ? "asking" : "none"))"
         view.bringSubviewToFront(l.superview ?? l)
     }
 }
@@ -516,6 +694,18 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
+/// Virt's own messages from a friend's page (not the website's `kinetic` bridge): only "signedOut", only from
+/// train.time2play.live's main frame. A separate object, so WebKit's strong hold on it doesn't keep the controller alive.
+final class AccountHandler: NSObject, WKScriptMessageHandler {
+    weak var shell: ShellController?
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == Navigation.friendHost,
+              (message.body as? [String: Any])?["type"] as? String == "signedOut" else { return }
+        Task { @MainActor in self.shell?.pageSignedOut() }
+    }
+}
+
 /// A label with room around its text (the no-signal note).
 final class PaddedLabel: UILabel {
     override func drawText(in rect: CGRect) { super.drawText(in: rect.insetBy(dx: 14, dy: 7)) }
@@ -528,12 +718,14 @@ final class PaddedLabel: UILabel {
 /// The plain offline screen: what happened, and Retry.
 struct OfflineView: View {
     let detail: String
+    /// "the studio" (Tyler's door) or "Training" (a friend's).
+    var place = "the studio"
     let retry: () -> Void
 
     var body: some View {
         VStack(spacing: 18) {
             Image("VirtMark").resizable().scaledToFit().frame(width: 72, height: 72).opacity(0.9)
-            Text("Can't reach the studio").font(.title2.weight(.semibold)).foregroundStyle(.white)
+            Text("Can't reach \(place)").font(.title2.weight(.semibold)).foregroundStyle(.white)
             Text("Check the connection, then try again. A workout in progress is saved on the page and picks up where it was.")
                 .font(.body).foregroundStyle(.white.opacity(0.7)).multilineTextAlignment(.center)
             Text(detail).font(.footnote).foregroundStyle(.white.opacity(0.45)).multilineTextAlignment(.center)

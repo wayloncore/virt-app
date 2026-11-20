@@ -15,6 +15,21 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             for k in [Reminders.Key.enabled, Reminders.Key.movedTo, SoundBoard.Key.enabled, SoundBoard.Key.style, SharedStore.localKey] {
                 UserDefaults.standard.removeObject(forKey: k)
             }
+            DoorStore.forget()
+            FriendKeeper.clear()
+        }
+        // the test build's doors: `-uitest-door-none` (the first screen), `-uitest-door-friend` (a friend signed in with
+        // VIRT_FRIEND_TOKEN, a made-up session), or Tyler's (every other test, as before doors)
+        if ProcessInfo.processInfo.arguments.contains("-uitest") {
+            let args = ProcessInfo.processInfo.arguments
+            if args.contains("-uitest-door-none") {
+                DoorStore.leave()  // asks, even if the simulator still has a studio cookie from another test
+            } else if args.contains("-uitest-door-friend") {
+                DoorStore.choose(.friend)
+                if let t = ProcessInfo.processInfo.environment["VIRT_FRIEND_TOKEN"] { FriendKeeper.save(FriendSession(token: t, name: "Sam")) }
+            } else {
+                DoorStore.choose(.tyler)
+            }
         }
         #endif
         Engine.shared.launched()
@@ -136,6 +151,23 @@ enum CookieKeeper {
             guard !cookies.isEmpty else { return done() }
             let group = DispatchGroup()
             for c in cookies { group.enter(); store.setCookie(c) { group.leave() } }
+            group.notify(queue: .main) { done() }
+        }
+    }
+
+    /// A saved copy of the studio's sign-in is on this phone (DoorStore.usedBefore).
+    static var hasCopy: Bool { !(read() ?? Data()).isEmpty }
+
+    /// Signs the web view out of the studio and forgets the saved copy (signing out of Tyler's door in Virt's
+    /// settings). Only the sign-in cookies: Training's own copy on this phone (workouts not sent yet) stays.
+    static func signOut(of store: WKHTTPCookieStore, then done: @escaping () -> Void) {
+        write(Data())
+        store.getAllCookies { cookies in
+            let group = DispatchGroup()
+            for c in cookies where domains.contains(where: { c.domain == $0 || c.domain.hasSuffix("." + $0) }) {
+                group.enter()
+                store.delete(c) { group.leave() }
+            }
             group.notify(queue: .main) { done() }
         }
     }

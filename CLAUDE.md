@@ -1,6 +1,6 @@
 # virt-app
 
-Virt: Tyler's private iPhone app for his own workout Training. A native shell around studio Training
+Virt: Tyler's private iPhone app for his own workout Training, and (#578, Training for friends) his friends' too. A native shell around studio Training
 (studio.tyleralocke.com/training: the same screens and data, so the website stays the backup), plus the native
 pieces the web can't do well: alerts at the exact zero with the phone locked, the timer on the lock screen and in the
 Dynamic Island (a Live Activity), and the screen kept awake during a workout. iPhone only (no iPad, no Watch yet).
@@ -8,8 +8,9 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
 
 ## What's here
 - `Core/`: the `VirtCore` Swift package, with no UI: the bridge messages (`BridgeMessage.swift`), the timer math, alert
-  plan, Live Activity content and screen-awake rule (`TimerBoard.swift`, `TimerDisplay.swift`), and which pages open
-  inside the app (`Navigation.swift`). Foundation only, so it tests on Linux.
+  plan, Live Activity content and screen-awake rule (`TimerBoard.swift`, `TimerDisplay.swift`), which pages open
+  inside the app (`Navigation.swift`, per door), and the doors and the friend's sign-in (`Door.swift`). Foundation
+  only, so it tests on Linux.
 - `App/`: the app. `ShellController.swift` is the web view (the `kinetic` bridge, sign-in kept inside, pull to
   refresh, the offline screen with Retry, the status bar matched to the page, the page's confirm() as native alerts,
   downloads to the share sheet). `Engine.swift` turns the timer state into notifications, the Live Activity, the
@@ -47,6 +48,22 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
 - App icon: `App/Assets.xcassets/AppIcon.appiconset` (the gold nested V on black, 1024 × 1024, no alpha). Colors: gold
   `#DFC297` (sampled from the icon) and black `#0B0A09`.
 
+## The two doors (#578 part 2, #580)
+The first screen on a new phone (`App/Account.swift`, `DoorsView`) asks which way in; the choice is saved
+(`virt.door` in UserDefaults) and Settings' "Switch sign-in" goes back to it.
+- **Tyler's studio:** Cloudflare Access, then studio Training: exactly the path from before doors (Face ID,
+  `CookieKeeper`). A phone that used Virt before doors (a studio sign-in, a saved `today`, his settings) opens it
+  without asking (`Door.resolve`).
+- **Training for friends:** the 13+ question, Sign in with Apple (`com.apple.developer.applesignin`; `asc.py ready`
+  turns the capability on), `POST tyleralocke.com/live/players/apple` (the Time2Play accounts server), the session in
+  this phone's Keychain (`FriendKeeper`, service `com.tyleralocke.virt.friend`), then train.time2play.live with the
+  session handed over as `window.T2P_SESSION` before the page runs (`FriendSignIn.handoverScript`, that host only).
+  The page's "Sign out here" posts to Virt's own `virtAccount` handler, and Virt signs out too.
+- A friend's web view opens only train.time2play.live inside; the studio and everything else go to Safari. Signing
+  out of either door clears the widgets' `today`, the reminders, any timer, and that door's sign-in on the phone.
+- The server checks the Apple token's audience; it has to accept `com.tyleralocke.virt` as well as Time2Play's
+  bundle id (a website issue), and the friend's page is a 404 until Tyler approves the `training-friends` switch.
+
 ## The bridge (the website owns it)
 The contract is the website's `docs/kinetic/bridge.md` (`src/lib/training/kinetic.js`). The page posts to the
 `window.webkit.messageHandlers.kinetic` handler (keep that name: "Kinetic" was the app's working name) and takes
@@ -73,11 +90,12 @@ at each of their zeros; until the page sends it, only the running step's zero so
 
 ## Rules
 - **Health data never reaches any AI.** No AI anywhere in Virt. Nothing about workouts leaves the phone except to the
-  studio itself, through the web view. No analytics, no third-party SDKs.
+  studio itself (or, for a friend, train.time2play.live), through the web view. No analytics, no third-party SDKs.
 - **Keys only in GitHub secrets**, never in the repo, an issue, a comment or a log.
 - **Saved data stays readable by the previous version:** add fields (optional ones), never rename or remove them in
   the same release. That includes the Live Activity's content (`TimerDisplay`) and the Keychain sign-in copy.
 - Never submit to App Review (builds are TestFlight internal only). Never change this repo's visibility.
 - Apple: Team ID `6WK983RXJT`, bundle ids `com.tyleralocke.virt` and `com.tyleralocke.virt.timer`, home screen name
   "Virt". None of these is secret.
+- External TestFlight and Beta App Review for friends are #578 part 3 (#581): Tyler's call, never from a session.
 - American spelling. Plain-language comments and PR text.
