@@ -138,4 +138,44 @@ final class DoorTests: XCTestCase {
         XCTAssertTrue(list.contains("train.time2play.live"))
         XCTAssertLessThanOrEqual(list.count, 10, "iOS allows ten")
     }
+
+    // MARK: - Tyler's own Training with Apple (#732)
+
+    func testOwnerOutcomes() throws {
+        let tok = "TLowner" + String(repeating: "a", count: 48)
+        let ok = Data("{\"ok\":true,\"token\":\"\(tok)\",\"expires\":1800000000000}".utf8)
+        guard case .owner(let s) = OwnerSignIn.outcome(status: 200, body: ok) else { return XCTFail("the owner's session") }
+        XCTAssertTrue(s.isOwner)
+        XCTAssertEqual(s.token, tok)
+        XCTAssertEqual(s.expires, 1_800_000_000_000)
+        let notLinked = Data("{\"ok\":false,\"code\":\"not-linked\",\"link\":\"AB12\"}".utf8)
+        XCTAssertEqual(OwnerSignIn.outcome(status: 403, body: notLinked), .notLinked(code: "AB12"))
+        // a bad code is never put into a script
+        XCTAssertEqual(OwnerSignIn.outcome(status: 403, body: Data("{\"code\":\"not-linked\",\"link\":\"x';\"}".utf8)), .unavailable)
+        // the switch off (a 404), no answer, a server problem: go on as a friend
+        XCTAssertEqual(OwnerSignIn.outcome(status: 404, body: Data()), .unavailable)
+        XCTAssertEqual(OwnerSignIn.outcome(status: 0, body: Data()), .unavailable)
+        XCTAssertEqual(OwnerSignIn.outcome(status: 500, body: Data("{}".utf8)), .unavailable)
+        XCTAssertEqual(OwnerSignIn.url("owner/apple").absoluteString, "https://train.time2play.live/live/train/owner/apple")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: OwnerSignIn.appleBody(identityToken: "abc")) as? [String: String])
+        XCTAssertEqual(body, ["identityToken": "abc"])
+    }
+
+    /// The owner flag is an added, optional field: a session saved by the previous version still reads, as a friend's.
+    func testOwnerFieldReadsOldSessions() throws {
+        let old = Data("{\"token\":\"uitestfriendsession0123456789\",\"name\":\"Sam\"}".utf8)
+        let s = try XCTUnwrap(FriendSession.decode(old))
+        XCTAssertFalse(s.isOwner)
+        let back = try XCTUnwrap(FriendSession.decode(try XCTUnwrap(FriendSession(token: s.token, name: "Tyler", owner: true).encoded())))
+        XCTAssertTrue(back.isOwner)
+    }
+
+    func testLinkScriptsStayOnTheStudio() {
+        XCTAssertTrue(OwnerSignIn.linkScript.contains("location.hostname !== 'studio.tyleralocke.com'"))
+        XCTAssertTrue(OwnerSignIn.linkScript.contains("/api/training-owner"))
+        XCTAssertTrue(OwnerSignIn.waitingScript.contains("studio.gym.queue"))
+        XCTAssertTrue(OwnerSignIn.codeOk("AB12"))
+        XCTAssertFalse(OwnerSignIn.codeOk("ab12"))
+        XCTAssertFalse(OwnerSignIn.codeOk("AB1"))
+    }
 }

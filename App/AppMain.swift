@@ -24,6 +24,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-uitest-door-none") {
                 DoorStore.leave()  // asks, even if the simulator still has a studio cookie from another test
+                // #732: the studio fallback shows only on a phone that used the studio; `-uitest-studio-used` is that phone
+                DoorStore.studioUsed = args.contains("-uitest-studio-used")
             } else if args.contains("-uitest-door-friend") {
                 DoorStore.choose(.friend)
                 if let t = ProcessInfo.processInfo.environment["VIRT_FRIEND_TOKEN"] { FriendKeeper.save(FriendSession(token: t, name: "Sam")) }

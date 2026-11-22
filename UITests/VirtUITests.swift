@@ -97,33 +97,45 @@ final class VirtUITests: XCTestCase {
 
     // MARK: - Training for friends (#578, part 2)
 
-    /// A new phone: the two doors first. The friend's door asks the age, then shows Sign in with Apple (a simulator
-    /// can't finish it); Tyler's opens the studio's sign-in inside the app, as before.
-    func testTheTwoDoorsFirst() {
-        let app = launch(args: ["-uitest-door-none"])
-        let friend = app.buttons["door-friend"]
-        XCTAssertTrue(friend.waitForExistence(timeout: 15), "the first screen: the two doors")
-        XCTAssertTrue(app.buttons["door-tyler"].exists)
-        XCTAssertTrue(app.staticTexts["Training for friends"].exists)
-        XCTAssertTrue(app.staticTexts["Tyler's studio"].exists)
+    /// A new phone (#732): one way in. Get started, the 13+ question, then Sign in with Apple (a simulator can't finish
+    /// it). On a phone that has used the studio, its sign-in is offered small, and it opens inside the app as before.
+    func testOneSignInFirst() {
+        let app = launch(args: ["-uitest-door-none", "-uitest-studio-used"])
+        let start = app.buttons["get-started"]
+        XCTAssertTrue(start.waitForExistence(timeout: 15), "the first screen: Get started")
+        XCTAssertTrue(app.staticTexts["Welcome to Virt"].exists)
+        XCTAssertFalse(app.staticTexts["Training for friends"].exists, "no door choice")
         sleep(1)
-        shot("doors")
+        shot("welcome")
 
-        friend.tap()
+        start.tap()
         let yes = app.buttons["age-yes"]
         XCTAssertTrue(yes.waitForExistence(timeout: 5), "the 13+ question first")
         yes.tap()
         let apple = app.buttons["apple-sign-in"]
         XCTAssertTrue(apple.waitForExistence(timeout: 5) || app.buttons["Sign in with Apple"].exists, "Sign in with Apple")
+        shot("apple")
         app.buttons["doors-back"].tap()
 
         let tyler = app.buttons["door-tyler"]
-        XCTAssertTrue(tyler.waitForExistence(timeout: 5))
+        XCTAssertTrue(tyler.waitForExistence(timeout: 5), "the studio's sign-in, on a phone that used it")
         tyler.tap()
         XCTAssertTrue(waitStatus(app, contains: "door tyler", 10), status(app))
         let reached = waitStatus(app, contains: "cloudflareaccess.com", 40) || waitStatus(app, contains: "host studio.tyleralocke.com", 5)
-        XCTAssertTrue(reached, "Tyler's door opens the studio's sign-in inside the app: \(status(app))")
+        XCTAssertTrue(reached, "the studio's sign-in opens inside the app: \(status(app))")
         XCTAssertEqual(app.state, .runningForeground, "nothing was sent to Safari")
+    }
+
+    /// A friend's phone (never used the studio): no studio sign-in anywhere on the first screen.
+    func testAFriendsPhoneHasNoStudioDoor() {
+        let app = launch(args: ["-uitest-door-none"])
+        XCTAssertTrue(app.buttons["get-started"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["door-tyler"].exists, "no studio sign-in on a friend's phone")
+        app.buttons["get-started"].tap()
+        XCTAssertTrue(app.buttons["age-yes"].waitForExistence(timeout: 5))
+        app.buttons["age-yes"].tap()
+        XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 5) || app.buttons["Sign in with Apple"].exists)
+        XCTAssertFalse(app.buttons["door-tyler"].exists, "no studio sign-in on a friend's phone")
     }
 
     /// A friend signed in (a made-up session): train.time2play.live gets the session before its scripts run, the
@@ -148,7 +160,7 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(status(app).contains("workout Full body A"), status(app))
 
         web.buttons["Sign out here"].tap()
-        XCTAssertTrue(app.buttons["door-friend"].waitForExistence(timeout: 10), "signed out: the first screen")
+        XCTAssertTrue(app.buttons["get-started"].waitForExistence(timeout: 10), "signed out: the first screen")
     }
 
     /// With no way to reach the studio: the plain offline screen, and Retry.
