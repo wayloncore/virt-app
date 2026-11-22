@@ -259,7 +259,7 @@ def ready():
 # ---------- after the upload ----------
 
 def builds(app_id, number=None):
-    params = {"filter[app]": app_id, "sort": "-uploadedDate", "limit": 20, "fields[builds]": "version,processingState,uploadedDate,expired"}
+    params = {"filter[app]": app_id, "sort": "-uploadedDate", "limit": 20, "fields[builds]": "version,processingState,uploadedDate,expired,usesNonExemptEncryption"}
     if number:
         params["filter[version]"] = number
     return call("GET", "/v1/builds" + q(params))["data"]
@@ -437,10 +437,11 @@ def external():
         die(f"Group {GROUP!r} is ready (public link: {link or 'shows once a build is approved'}). Beta App Review needs a "
             "contact phone number: App Store Connect -> Virt -> TestFlight -> Test Information -> Beta App Review "
             "Information. Then run this again (TestFlight workflow, check_only and external both true)")
-    call("POST", f"/v1/betaGroups/{group['id']}/relationships/builds", {"data": [{"type": "builds", "id": build["id"]}]})
-    print(f"Group {GROUP!r}: public link on, build {num} in it")
+    detail_b = one(f"/v1/builds/{build['id']}/buildBetaDetail") or {}
+    print(f"Build {num}: external state {detail_b.get('attributes', {}).get('externalBuildState')}, "
+          f"encryption answer {build['attributes'].get('usesNonExemptEncryption')}")
 
-    # Beta App Review
+    # Beta App Review first (Apple may refuse a build in an external group before it's submitted)
     state = (one(f"/v1/builds/{build['id']}/betaAppReviewSubmission") or {}).get("attributes", {}).get("betaReviewState")
     if state:
         print(f"Build {num} is already with Beta App Review: {state}")
@@ -448,6 +449,11 @@ def external():
         call("POST", "/v1/betaAppReviewSubmissions", {"data": {"type": "betaAppReviewSubmissions",
             "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}}}})
         print(f"Build {num}: sent to Beta App Review")
+    try:
+        call("POST", f"/v1/betaGroups/{group['id']}/relationships/builds", {"data": [{"type": "builds", "id": build["id"]}]})
+        print(f"Group {GROUP!r}: public link on, build {num} in it")
+    except SystemExit:
+        print(f"Group {GROUP!r}: build {num} not added yet (run this again once Apple approves it)")
     link = call("GET", f"/v1/betaGroups/{group['id']}")["data"]["attributes"].get("publicLink")
     msg = f"Friends' TestFlight link: {link or 'shows once Apple approves the build'}"
     print(msg)
