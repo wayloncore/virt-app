@@ -11,6 +11,9 @@ never prints a key.
   asc.py wait BUILD          waits until build BUILD of version 1.0 is processed, then turns on internal testing
   asc.py status              lists the app's builds (number, state) for the log
   asc.py invite              sends the TestFlight invitation email again to the internal group's testers
+  asc.py external            (#581, Tyler's go on 2026-11-22) the friends' external TestFlight: test information,
+                             the "Friends" group with a public link, the newest processed build in it, and that build
+                             sent to Beta App Review (TestFlight's review, not the App Store's)
 
 Reads ASC_KEY_PATH (the .p8 file), ASC_KEY_ID and ASC_ISSUER_ID from the environment.
 
@@ -20,7 +23,7 @@ issued for it, and Apple's limit on distribution certificates is never reached. 
 new certificate, once. Virt uses the same App Store Connect key and the same seed as time2play-app, so both apps
 share one distribution certificate.
 
-It never submits anything for App Review.
+It never submits anything for App Store review. `external` sends a build to Beta App Review only (#581).
 """
 import base64, hashlib, hmac, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
@@ -356,6 +359,94 @@ def wait(number, minutes=40):
         print(f"Build {number} is still processing after {minutes} minutes; it shows in TestFlight when Apple finishes")
 
 
+# ---------- the friends' external TestFlight (#581) ----------
+
+FEEDBACK_EMAIL = "hello@tyleralocke.com"
+PRIVACY_URL = "https://train.time2play.live/privacy"
+BETA_DESCRIPTION = ("Virt is a workout tracker. Pick a starter plan or build your own, log your sets, and rest with a "
+                    "timer that keeps going on the lock screen and in the Dynamic Island. Your workouts stay in your own "
+                    "account. No AI, no ads, no analytics.")
+WHAT_TO_TEST = ("Sign in with Apple, pick a plan, and run a workout: log sets, let a rest timer run with the phone "
+                "locked, and try the Log set button on the lock screen. Tell us anything that feels off.")
+REVIEW_NOTES = ("On the first screen choose \"Training for friends\" and sign in with Apple (any Apple ID works; no demo "
+                "account needed). Then pick a starter plan and start today's workout. The other choice, \"Tyler's "
+                "studio\", is the developer's own private sign-in and isn't meant for testers.")
+GROUP = "Friends"
+
+
+def one(path):
+    r = call("GET", path, ok_missing=True)
+    return (r or {}).get("data")
+
+
+def external():
+    app = the_app()
+    aid = app["id"]
+
+    # test information: what testers read in TestFlight, and where feedback goes
+    locs = call("GET", f"/v1/apps/{aid}/betaAppLocalizations")["data"]
+    attrs = {"description": BETA_DESCRIPTION, "feedbackEmail": FEEDBACK_EMAIL, "privacyPolicyUrl": PRIVACY_URL}
+    loc = next((l for l in locs if l["attributes"]["locale"] == "en-US"), None)
+    if loc:
+        call("PATCH", f"/v1/betaAppLocalizations/{loc['id']}", {"data": {"type": "betaAppLocalizations", "id": loc["id"], "attributes": attrs}})
+    else:
+        call("POST", "/v1/betaAppLocalizations", {"data": {"type": "betaAppLocalizations", "attributes": dict(attrs, locale="en-US"),
+            "relationships": {"app": {"data": {"type": "apps", "id": aid}}}}})
+    print("Test information (description, feedback email, privacy link): set")
+
+    # Beta App Review's contact and notes. The phone number is Tyler's to add in App Store Connect; never in the repo
+    detail = one(f"/v1/apps/{aid}/betaAppReviewDetail")
+    rattrs = {"contactFirstName": "Tyler", "contactLastName": "Locke", "contactEmail": FEEDBACK_EMAIL,
+              "demoAccountRequired": False, "notes": REVIEW_NOTES}
+    call("PATCH", f"/v1/betaAppReviewDetails/{detail['id']}", {"data": {"type": "betaAppReviewDetails", "id": detail["id"], "attributes": rattrs}})
+    phone = detail["attributes"].get("contactPhone")
+    print("Review contact and notes: set" + ("" if phone else " (no phone number yet: Tyler adds it in TestFlight -> Test Information)"))
+
+    # the newest processed build
+    valid = [b for b in builds(aid) if b["attributes"]["processingState"] == "VALID" and not b["attributes"].get("expired")]
+    if not valid:
+        die("No processed build to send")
+    build = valid[0]
+    num = build["attributes"]["version"]
+    blocs = call("GET", f"/v1/builds/{build['id']}/betaBuildLocalizations")["data"]
+    bloc = next((l for l in blocs if l["attributes"]["locale"] == "en-US"), None)
+    if bloc:
+        call("PATCH", f"/v1/betaBuildLocalizations/{bloc['id']}", {"data": {"type": "betaBuildLocalizations", "id": bloc["id"], "attributes": {"whatsNew": WHAT_TO_TEST}}})
+    else:
+        call("POST", "/v1/betaBuildLocalizations", {"data": {"type": "betaBuildLocalizations", "attributes": {"locale": "en-US", "whatsNew": WHAT_TO_TEST},
+            "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}}}})
+    print(f"Build {num}: What to Test set")
+
+    # the external group with a public link
+    groups = call("GET", "/v1/betaGroups" + q({"filter[app]": aid, "limit": 200}))["data"]
+    group = next((g for g in groups if g["attributes"]["name"] == GROUP and not g["attributes"].get("isInternalGroup")), None)
+    gattrs = {"publicLinkEnabled": True, "feedbackEnabled": True}
+    if group:
+        group = call("PATCH", f"/v1/betaGroups/{group['id']}", {"data": {"type": "betaGroups", "id": group["id"], "attributes": gattrs}})["data"]
+    else:
+        group = call("POST", "/v1/betaGroups", {"data": {"type": "betaGroups", "attributes": dict(gattrs, name=GROUP),
+            "relationships": {"app": {"data": {"type": "apps", "id": aid}}}}})["data"]
+    call("POST", f"/v1/betaGroups/{group['id']}/relationships/builds", {"data": [{"type": "builds", "id": build["id"]}]})
+    print(f"Group {GROUP!r}: public link on, build {num} in it")
+
+    # Beta App Review
+    state = (one(f"/v1/builds/{build['id']}/betaAppReviewSubmission") or {}).get("attributes", {}).get("betaReviewState")
+    if state:
+        print(f"Build {num} is already with Beta App Review: {state}")
+    else:
+        if not phone:
+            die("Beta App Review needs a contact phone number. Add it in App Store Connect -> Virt -> TestFlight -> "
+                "Test Information -> Beta App Review Information, then run this again")
+        call("POST", "/v1/betaAppReviewSubmissions", {"data": {"type": "betaAppReviewSubmissions",
+            "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}}}})
+        print(f"Build {num}: sent to Beta App Review")
+    link = call("GET", f"/v1/betaGroups/{group['id']}")["data"]["attributes"].get("publicLink")
+    msg = f"Friends' TestFlight link: {link or 'shows once Apple approves the build'}"
+    print(msg)
+    with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a") as f:
+        f.write(msg + "\n")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "ready":
@@ -372,5 +463,7 @@ if __name__ == "__main__":
         status()
     elif cmd == "invite":
         invite()
+    elif cmd == "external":
+        external()
     else:
         die(__doc__)
