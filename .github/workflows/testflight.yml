@@ -19,6 +19,10 @@ on:
         description: "Send the TestFlight invitation email again (use with check_only: true; no build)"
         required: false
         default: "false"
+      external:
+        description: "Friends' external TestFlight (#581): send the newest build to Beta App Review (use with check_only: true; no build)"
+        required: false
+        default: "false"
   push:
     branches: [main, "claude/**"]
 permissions:
@@ -63,6 +67,9 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py status || true
           if [ "${{ github.event.inputs.invite }}" = "true" ] && [ -z "$rc" ]; then
             "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py invite || rc=$?
+          fi
+          if [ "${{ github.event.inputs.external }}" = "true" ] && [ -z "$rc" ]; then
+            "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py external || rc=$?
           fi
           rm -rf "$RUNNER_TEMP/asc"
           exit ${rc:-0}
