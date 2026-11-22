@@ -20,7 +20,7 @@ on:
         required: false
         default: "false"
       external:
-        description: "Friends' external TestFlight (#581): send the newest build to Beta App Review (use with check_only: true; no build)"
+        description: "Friends' external TestFlight (#581): send the newest build to Beta App Review (with check_only: true, the newest build already there; otherwise the one this run makes)"
         required: false
         default: "false"
   push:
@@ -68,7 +68,7 @@ jobs:
           if [ "${{ github.event.inputs.invite }}" = "true" ] && [ -z "$rc" ]; then
             "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py invite || rc=$?
           fi
-          if [ "${{ github.event.inputs.external }}" = "true" ] && [ -z "$rc" ]; then
+          if [ "${{ github.event.inputs.external }}" = "true" ] && [ "${{ github.event.inputs.check_only }}" = "true" ] && [ -z "$rc" ]; then
             "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py external || rc=$?
           fi
           rm -rf "$RUNNER_TEMP/asc"
@@ -170,7 +170,7 @@ jobs:
             </dict>
             <key>manageAppVersionAndBuildNumber</key><false/>
             <key>uploadSymbols</key><true/>
-            <key>testFlightInternalTestingOnly</key><true/>
+            <key>testFlightInternalTestingOnly</key><false/>
           </dict></plist>
           PLIST
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Virt.xcarchive" \
@@ -205,6 +205,10 @@ jobs:
           export ASC_KEY_PATH="$RUNNER_TEMP/asc/key.p8"
           python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" -q install cryptography==44.0.2 pyjwt==2.10.1
           "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py wait "${{ needs.upload.outputs.build }}" || rc=$?
+          # #581: with external true, the new build goes to the friends' group and Beta App Review
+          if [ "${{ github.event.inputs.external }}" = "true" ] && [ -z "$rc" ]; then
+            "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py external || rc=$?
+          fi
           "$RUNNER_TEMP/venv/bin/python" -I scripts/asc.py status || true
           rm -rf "$RUNNER_TEMP/asc"
           exit ${rc:-0}
