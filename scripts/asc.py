@@ -431,6 +431,12 @@ def external():
     else:
         group = call("POST", "/v1/betaGroups", {"data": {"type": "betaGroups", "attributes": dict(gattrs, name=GROUP),
             "relationships": {"app": {"data": {"type": "apps", "id": aid}}}}})["data"]
+    link = group["attributes"].get("publicLink")
+    if not phone:
+        # Apple won't put a build in an external group until the review information is complete
+        die(f"Group {GROUP!r} is ready (public link: {link or 'shows once a build is approved'}). Beta App Review needs a "
+            "contact phone number: App Store Connect -> Virt -> TestFlight -> Test Information -> Beta App Review "
+            "Information. Then run this again (TestFlight workflow, check_only and external both true)")
     call("POST", f"/v1/betaGroups/{group['id']}/relationships/builds", {"data": [{"type": "builds", "id": build["id"]}]})
     print(f"Group {GROUP!r}: public link on, build {num} in it")
 
@@ -439,9 +445,6 @@ def external():
     if state:
         print(f"Build {num} is already with Beta App Review: {state}")
     else:
-        if not phone:
-            die("Beta App Review needs a contact phone number. Add it in App Store Connect -> Virt -> TestFlight -> "
-                "Test Information -> Beta App Review Information, then run this again")
         call("POST", "/v1/betaAppReviewSubmissions", {"data": {"type": "betaAppReviewSubmissions",
             "relationships": {"build": {"data": {"type": "builds", "id": build["id"]}}}}})
         print(f"Build {num}: sent to Beta App Review")
