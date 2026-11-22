@@ -398,9 +398,14 @@ def external():
     detail = one(f"/v1/apps/{aid}/betaAppReviewDetail")
     rattrs = {"contactFirstName": "Tyler", "contactLastName": "Locke", "contactEmail": FEEDBACK_EMAIL,
               "demoAccountRequired": False, "notes": REVIEW_NOTES}
-    call("PATCH", f"/v1/betaAppReviewDetails/{detail['id']}", {"data": {"type": "betaAppReviewDetails", "id": detail["id"], "attributes": rattrs}})
+    # Apple won't take the rest without a phone number; Tyler's own goes in by hand. Read back, never printed
     phone = detail["attributes"].get("contactPhone")
-    print("Review contact and notes: set" + ("" if phone else " (no phone number yet: Tyler adds it in TestFlight -> Test Information)"))
+    if phone:
+        rattrs["contactPhone"] = phone
+        call("PATCH", f"/v1/betaAppReviewDetails/{detail['id']}", {"data": {"type": "betaAppReviewDetails", "id": detail["id"], "attributes": rattrs}})
+        print("Review contact and notes: set")
+    else:
+        print("Review contact and notes: waiting for a phone number (Tyler adds it in TestFlight -> Test Information)")
 
     # the newest processed build
     valid = [b for b in builds(aid) if b["attributes"]["processingState"] == "VALID" and not b["attributes"].get("expired")]
