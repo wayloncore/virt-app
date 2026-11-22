@@ -158,6 +158,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             friendSession = s
         }
         door = d
+        if d == .tyler { DoorStore.studioUsed = true }
         installScripts()
         guard d != nil else { return showDoors(note: note) }
         hideDoors()
@@ -231,7 +232,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     /// Delete account (Virt's settings, a friend only): a fresh Sign in with Apple so the server can revoke it, then
     /// the server deletes the Time2Play account and all of its Training. nil when it's done; otherwise why not.
     func deleteFriendAccount() async -> String? {
-        guard door == .friend, let s = friendSession else { return "Only a friend's account can be deleted here." }
+        guard door == .friend, let s = friendSession, !s.isOwner else { return "Only a friend's account can be deleted here." }
         var code: String?
         do {
             let c = try await AppleAuth().request()
@@ -254,7 +255,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         let host = UIHostingController(rootView: DoorsView(opened: { [weak self] d in
             DoorStore.choose(d)
             self?.openDoor(d)
-        }, note: note))
+        }, note: note, studioFallback: DoorStore.studioUsed))
         host.view.backgroundColor = .virtBlack
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
@@ -351,11 +352,64 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     func showSettings() {
         if let p = presentedViewController { p.dismiss(animated: false) }
         let account = SettingsAccount(door: door, name: friendSession?.name ?? "",
+                                      owner: friendSession?.isOwner == true,
                                       midWorkout: Engine.shared.board.midWorkout(now: Date()),
                                       leave: { [weak self] in self?.leaveDoor() },
-                                      delete: { [weak self] in await self?.deleteFriendAccount() })
+                                      delete: { [weak self] in await self?.deleteFriendAccount() },
+                                      apple: { [weak self] in await self?.appleFromStudio() },
+                                      studio: { [weak self] in self?.studioFromOwner() })
         let host = UIHostingController(rootView: SettingsView(account: account) { [weak self] in self?.dismiss(animated: true) })
         present(host, animated: true)
+    }
+
+    // MARK: - Tyler's own Training with Apple (#732)
+
+    /// Settings → Sign in with Apple, on the studio's sign-in: Sign in with Apple, link that Apple ID to his studio
+    /// Training from the studio page already open here (behind Access, so only he can), then his Training opens on
+    /// the train host. Waits if a workout hasn't been sent yet. The studio's sign-in stays as the fallback. nil when
+    /// it's done; otherwise why not.
+    func appleFromStudio() async -> String? {
+        guard door == .tyler else { return "Open the studio sign-in first." }
+        guard web.url?.host == "studio.tyleralocke.com" else { return "Open the studio's Training first (sign in with the studio's email code), then try again." }
+        if (try? await web.callAsyncJavaScript(OwnerSignIn.waitingScript, arguments: [:], contentWorld: .page)) as? Bool == true {
+            return "A workout on this phone hasn't been sent yet. Open Training with a signal so it sends, then try again."
+        }
+        let token: String
+        do {
+            let c = try await AppleAuth().request()
+            guard let t = c.identityToken.flatMap({ String(data: $0, encoding: .utf8) }) else { return "Couldn't sign in with Apple. Try again." }
+            token = t
+        } catch {
+            if (error as? ASAuthorizationError)?.code == .canceled { return "Not changed." }
+            return "Couldn't sign in with Apple. Try again."
+        }
+        var outcome = await FriendAPI.ownerSignIn(identityToken: token)
+        if case .notLinked(let code) = outcome {
+            let r = try? await web.callAsyncJavaScript(OwnerSignIn.linkScript, arguments: ["code": code], contentWorld: .page)
+            let j = r as? [String: Any]
+            guard j?["ok"] as? Bool == true else {
+                let why = (j?["error"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "The studio didn't answer."
+                return "Couldn't link your Apple ID: \(why) You can link it by hand in the studio: Training, Profile, code \(code)."
+            }
+            outcome = await FriendAPI.ownerSignIn(identityToken: token)
+        }
+        guard case .owner(let s) = outcome else { return "Your Training with Apple isn't on yet. Nothing changed; the studio sign-in still works." }
+        FriendKeeper.save(s)
+        if presentedViewController != nil { dismiss(animated: true) }
+        DoorStore.choose(.friend)
+        openDoor(.friend)
+        return nil
+    }
+
+    /// Settings → Use the studio sign-in, from Tyler's Apple sign-in: back to the studio (Cloudflare) door. The
+    /// owner session ends; Sign in with Apple in Settings brings it back.
+    func studioFromOwner() {
+        guard door == .friend, let s = friendSession, s.isOwner else { return }
+        FriendKeeper.clear()
+        Task { await FriendAPI.signOut(s) }
+        if presentedViewController != nil { dismiss(animated: true) }
+        DoorStore.choose(.tyler)
+        openDoor(.tyler)
     }
 
     // MARK: - Looks

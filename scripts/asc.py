@@ -368,9 +368,8 @@ BETA_DESCRIPTION = ("Virt is a workout tracker. Pick a starter plan or build you
                     "account. No AI, no ads, no analytics.")
 WHAT_TO_TEST = ("Sign in with Apple, pick a plan, and run a workout: log sets, let a rest timer run with the phone "
                 "locked, and try the Log set button on the lock screen. Tell us anything that feels off.")
-REVIEW_NOTES = ("On the first screen choose \"Training for friends\" and sign in with Apple (any Apple ID works; no demo "
-                "account needed). Then pick a starter plan and start today's workout. The other choice, \"Tyler's "
-                "studio\", is the developer's own private sign-in and isn't meant for testers.")
+REVIEW_NOTES = ("Tap Get started, answer the 13+ question, and sign in with Apple (any Apple ID works; no demo account "
+                "needed). Then pick a starter plan and start today's workout.")
 GROUP = "Friends"
 
 

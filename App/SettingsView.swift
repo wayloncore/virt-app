@@ -10,11 +10,17 @@ struct SettingsAccount {
     var door: Door?
     /// The friend's name ("Sam"); empty for Tyler's door.
     var name: String
+    /// Tyler's own Training, signed in with Apple (#732).
+    var owner = false
     /// Switching waits until the workout's done.
     var midWorkout: Bool
     var leave: () -> Void
     /// Deletes a friend's account: nil when it's done, otherwise why not.
     var delete: () async -> String?
+    /// On the studio's sign-in: Sign in with Apple instead (links it to his studio Training). nil when done.
+    var apple: () async -> String? = { nil }
+    /// Signed in with Apple as Tyler: back to the studio's sign-in.
+    var studio: () -> Void = {}
 }
 
 struct SettingsView: View {
@@ -36,12 +42,30 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section {
-                    LabeledContent("Signed in", value: account.door == .friend ? (account.name.isEmpty ? "With Apple" : account.name) : "Tyler's studio")
+                    LabeledContent("Signed in", value: account.owner ? "Tyler, with Apple" : account.door == .friend ? (account.name.isEmpty ? "With Apple" : account.name) : "Tyler's studio")
                         .accessibilityIdentifier("signed-in-as")
-                    Button("Switch sign-in") { confirmLeave = true }
+                    if account.door == .tyler {
+                        Button("Sign in with Apple") {
+                            deleting = true
+                            deleteNote = nil
+                            Task {
+                                let why = await account.apple()
+                                deleting = false
+                                deleteNote = why
+                            }
+                        }
+                        .disabled(account.midWorkout || deleting)
+                        .accessibilityIdentifier("owner-apple")
+                    }
+                    if account.owner {
+                        Button("Use the studio sign-in") { account.studio() }
+                            .disabled(account.midWorkout || deleting)
+                            .accessibilityIdentifier("owner-studio")
+                    }
+                    Button(account.owner ? "Sign out" : "Switch sign-in") { confirmLeave = true }
                         .disabled(account.midWorkout || deleting)
                         .accessibilityIdentifier("switch-sign-in")
-                    if account.door == .friend {
+                    if account.door == .friend && !account.owner {
                         Button("Delete account", role: .destructive) { confirmDelete = true }
                             .disabled(account.midWorkout || deleting)
                             .accessibilityIdentifier("delete-account")
@@ -151,11 +175,12 @@ struct SettingsView: View {
 extension SettingsView {
     var signInFooter: String {
         if account.midWorkout { return "Finish the workout first, then you can switch." }
-        if deleting { return "Deleting…" }
+        if deleting { return account.door == .tyler ? "Signing in with Apple…" : "Deleting…" }
         if let n = deleteNote { return n }
+        if account.owner { return "Your own Training, signed in with Apple. Only your Apple ID opens it; the studio's email sign-in is the backup." }
         return account.door == .friend
             ? "Signed in with Apple to your Time2Play account. Only you see your training: no AI and no analytics."
-            : "Studio Training, signed in with the studio's email code. Switch to use Training for friends instead."
+            : "Studio Training, signed in with the studio's email code. Sign in with Apple to use your Apple ID instead: Virt links it to your Training for you."
     }
 }
 

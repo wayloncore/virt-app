@@ -43,12 +43,19 @@ public struct FriendSession: Codable, Equatable, Sendable {
     public var name: String
     /// When the server's session ends, in epoch milliseconds (the server's own clock), if it said.
     public var expires: Double?
+    /// Tyler's own Training (#732): an owner session from `POST /live/train/owner/apple`, for the studio's Training on
+    /// train.time2play.live. Checked and signed out on that host, never deleted from the phone. Added field (optional).
+    public var owner: Bool?
 
-    public init(token: String, name: String, expires: Double? = nil) {
+    public init(token: String, name: String, expires: Double? = nil, owner: Bool? = nil) {
         self.token = token
         self.name = name
         self.expires = expires
+        self.owner = owner
     }
+
+    /// An owner session (Tyler's own Training).
+    public var isOwner: Bool { owner == true }
 
     /// A token as the website takes it: letters and digits only, 16 to 200 of them (client.js `tokenOk`). That's also
     /// what makes it safe to write into the hand-over script.
@@ -164,4 +171,77 @@ public enum FriendSignIn {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.count >= 2 ? String(t.prefix(24)) : nil
     }
+}
+
+/// Tyler's own Training with Sign in with Apple (#730, #732; the website's src/lib/server/training-friends/owner.js).
+/// Everyone signs in with Apple. Virt asks the owner path first: Tyler's linked Apple ID gets an owner session for his
+/// studio Training; anyone else gets "not linked" and goes on to their own Time2Play account (FriendSignIn). The server
+/// decides whose data it is; the page never picks.
+public enum OwnerSignIn {
+    public static let base = URL(string: "https://\(Navigation.friendHost)/live/train/")!
+    public static func url(_ path: String) -> URL { base.appendingPathComponent(path) }
+
+    /// `POST /live/train/owner/apple`: the same identity token as the friend's sign-in.
+    public static func appleBody(identityToken: String) -> Data {
+        (try? JSONSerialization.data(withJSONObject: ["identityToken": identityToken], options: [.sortedKeys])) ?? Data()
+    }
+
+    public enum Outcome: Equatable, Sendable {
+        /// Tyler's linked Apple ID: his session.
+        case owner(FriendSession)
+        /// Not linked (a friend, or Tyler before linking): the four-character code the studio links with.
+        case notLinked(code: String)
+        /// The owner path isn't there (its switch is off) or couldn't answer: go on as a friend.
+        case unavailable
+    }
+
+    public static func outcome(status: Int, body: Data) -> Outcome {
+        let j = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+        if (200..<300).contains(status), let t = j["token"] as? String, FriendSession.tokenOk(t) {
+            let e = j["expires"]
+            let expires = (e as? Double) ?? (e as? Int).map(Double.init) ?? (e as? NSNumber)?.doubleValue
+            return .owner(FriendSession(token: t, name: "Tyler", expires: expires, owner: true))
+        }
+        if status == 403, j["code"] as? String == "not-linked", let c = j["link"] as? String, codeOk(c) {
+            return .notLinked(code: c)
+        }
+        return .unavailable
+    }
+
+    /// A link code as the studio takes it: four capital letters or digits (also what makes it safe in a script).
+    public static func codeOk(_ c: String) -> Bool {
+        c.count == 4 && c.allSatisfy { $0.isASCII && ($0.isUppercase || $0.isNumber) }
+    }
+
+    /// Run on Tyler's studio Training page (behind Cloudflare Access, so only he reaches it) with WKWebView's
+    /// callAsyncJavaScript and `code` as its argument: links the Apple sign-in that got that code. Answers
+    /// `{ ok, error }`. Only on studio.tyleralocke.com.
+    public static let linkScript = """
+        if (location.hostname !== 'studio.tyleralocke.com') return { ok: false, error: 'Open the studio first.' };
+        try {
+          const r = await fetch('/api/training-owner', { method: 'POST', credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' }, body: JSON.stringify({ do: 'link', code }) });
+          const j = await r.json().catch(() => ({}));
+          return { ok: r.ok && !!j.ok, error: String(j.error || '') };
+        } catch (e) { return { ok: false, error: 'No connection.' }; }
+        """
+
+    /// Run on the studio page before moving Tyler to his Apple sign-in: true when a workout still waits on this
+    /// phone (Training's offline queue, or a draft with sets in it), so nothing he hasn't sent is left behind on the
+    /// studio's host. The keys are the website's src/lib/health/client-local.js.
+    public static let waitingScript = """
+        try {
+          const q = JSON.parse(localStorage.getItem('studio.gym.queue') || '[]');
+          if (Array.isArray(q) && q.length) return true;
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i) || '';
+            if (!k.startsWith('studio.gym.draft.')) continue;
+            const d = JSON.parse(localStorage.getItem(k) || 'null');
+            /* the website's draftHasWork: not saved, and a step done or a set ticked or typed */
+            if (d && !d.saved && ((d.did || []).length > 0
+              || (d.cards || []).some((c) => (c.sets || []).some((x) => x && (x.done || x.typed))))) return true;
+          }
+          return false;
+        } catch (e) { return false; }
+        """
 }
