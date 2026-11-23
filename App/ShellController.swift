@@ -136,14 +136,25 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     // MARK: - The doors (Account.swift)
 
-    /// At launch: the saved door, Tyler's on a phone that used Virt before doors existed, or the first screen.
+    /// At launch: the saved door, or the first screen. A phone still on the studio's Cloudflare sign-in (Tyler's, from
+    /// before Apple sign-in) gets the first screen once, so his Apple ID opens his Training (Door.atLaunch, #732).
     private func pickDoor() {
-        if let saved = DoorStore.saved { return openDoor(Door(rawValue: saved)) }
+        if let saved = DoorStore.saved { return launchDoor(saved: saved, usedBefore: true) }
         DoorStore.usedBefore(cookies: web.configuration.websiteDataStore.httpCookieStore) { [weak self] used in
-            guard let self else { return }
-            if used { DoorStore.choose(.tyler) }
-            self.openDoor(used ? .tyler : nil)
+            self?.launchDoor(saved: nil, usedBefore: used)
         }
+    }
+
+    private func launchDoor(saved: String?, usedBefore: Bool) {
+        let plain = Door.resolve(saved: saved, usedBefore: usedBefore)
+        let d = Door.atLaunch(saved: saved, usedBefore: usedBefore, appleAsked: DoorStore.appleAsked)
+        if plain == .tyler && d == nil {
+            DoorStore.appleAsked = true
+            DoorStore.studioUsed = true  // the studio's sign-in stays on the first screen, small, as the fallback
+            return openDoor(nil, note: "Sign in with Apple to open your Training. No studio sign-in needed.")
+        }
+        if saved == nil, d == .tyler { DoorStore.choose(.tyler) }
+        openDoor(d)
     }
 
     /// Opens Training through a door, or the first screen (nil).

@@ -27,8 +27,15 @@ import WebKit
     /// Signed out of a door: the first screen asks again on the next launch.
     static func leave() { UserDefaults.standard.set(Door.none, forKey: Door.key) }
 
+    /// This phone has been shown Sign in with Apple in place of the studio's sign-in (Door.atLaunch).
+    static var appleAsked: Bool {
+        get { UserDefaults.standard.bool(forKey: Door.appleAskedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Door.appleAskedKey) }
+    }
+
     /// For the test build's reset only.
     static func forget() {
+        UserDefaults.standard.removeObject(forKey: Door.appleAskedKey)
         UserDefaults.standard.removeObject(forKey: Door.key)
         UserDefaults.standard.removeObject(forKey: studioKey)
     }

@@ -126,6 +126,17 @@ final class VirtUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground, "nothing was sent to Safari")
     }
 
+    /// Tyler's phone from before Apple sign-in (still set to the studio's door): the first screen, once, with the
+    /// studio's sign-in small underneath. It never opens Cloudflare by itself. The next launch keeps his choice.
+    func testAStudioPhoneIsOfferedAppleOnce() {
+        let app = launch(args: ["-uitest-apple-not-asked"])
+        XCTAssertTrue(app.buttons["get-started"].waitForExistence(timeout: 15), "the first screen, not the studio's sign-in")
+        XCTAssertTrue(app.buttons["door-tyler"].exists, "the studio's sign-in is still there, small")
+        XCTAssertFalse(status(app).contains("cloudflareaccess.com"), status(app))
+        sleep(1)
+        shot("apple-once")
+    }
+
     /// A friend's phone (never used the studio): no studio sign-in anywhere on the first screen.
     func testAFriendsPhoneHasNoStudioDoor() {
         let app = launch(args: ["-uitest-door-none"])

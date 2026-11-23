@@ -18,6 +18,16 @@ final class DoorTests: XCTestCase {
         XCTAssertEqual(Door.key, "virt.door")
     }
 
+    /// A phone still on the studio's sign-in is shown Sign in with Apple once (#732); after that its choice stands.
+    func testTheStudioDoorIsOfferedAppleOnce() {
+        XCTAssertNil(Door.atLaunch(saved: "tyler", usedBefore: true, appleAsked: false), "Tyler's phone from before Apple sign-in: the first screen, once")
+        XCTAssertNil(Door.atLaunch(saved: nil, usedBefore: true, appleAsked: false), "and a phone that used Virt before doors")
+        XCTAssertEqual(Door.atLaunch(saved: "tyler", usedBefore: true, appleAsked: true), .tyler, "asked already: the studio's sign-in stands")
+        XCTAssertEqual(Door.atLaunch(saved: "friend", usedBefore: true, appleAsked: false), .friend, "an Apple sign-in is never asked again")
+        XCTAssertNil(Door.atLaunch(saved: "none", usedBefore: true, appleAsked: true), "signed out: the first screen, as before")
+        XCTAssertNil(Door.atLaunch(saved: nil, usedBefore: false, appleAsked: false), "a new phone: the first screen")
+    }
+
     // MARK: - The session
 
     func testSession() {
