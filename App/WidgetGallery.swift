@@ -159,7 +159,7 @@ struct WidgetGallery: View {
     func islandBottom(_ d: TimerDisplay) -> some View {
         VStack(spacing: 8) {
             HStack {
-                Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(Color.virtGold).lineLimit(1)
+                Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(Color.virtAccent).lineLimit(1)
                 Spacer()
                 ClockText(d: d).font(.title2.weight(.semibold)).foregroundStyle(.white)
             }

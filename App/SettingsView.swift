@@ -143,7 +143,7 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", action: done).accessibilityIdentifier("settings-done") } }
         }
-        .tint(.virtGold)
+        .tint(.virtAccent)
         .alert("Switch sign-in?", isPresented: $confirmLeave) {
             Button("Sign out", role: .destructive) { account.leave() }
             Button("Cancel", role: .cancel) {}
@@ -190,7 +190,7 @@ private struct Tip: View {
     var body: some View {
         ForEach(Array(lines.enumerated()), id: \.offset) { i, l in
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("\(i + 1)").font(.subheadline.weight(.semibold).monospacedDigit()).foregroundStyle(Color.virtGold)
+                Text("\(i + 1)").font(.subheadline.weight(.semibold).monospacedDigit()).foregroundStyle(Color.virtAccent)
                 Text(l).font(.subheadline)
             }
         }
@@ -220,7 +220,7 @@ struct ReminderAskView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "bell.badge").font(.system(size: 34, weight: .semibold)).foregroundStyle(Color.virtGold)
+            Image(systemName: "bell.badge").font(.system(size: 34, weight: .semibold)).foregroundStyle(Color.virtAccent)
                 .padding(.top, 8)
             Text("A nudge on training days?").font(.title2.weight(.semibold)).foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -230,7 +230,7 @@ struct ReminderAskView: View {
                     Text("Remind me").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.virtGold)
+                .tint(.virtAccent)
                 .foregroundStyle(Color.virtBlack)
                 .accessibilityIdentifier("remind-yes")
                 Button { answer(false) } label: {

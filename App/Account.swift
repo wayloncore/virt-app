@@ -236,10 +236,10 @@ struct DoorsView: View {
                 case .notLinked(let code): notLinked(code)
                 }
                 if let p = problem ?? (step == .welcome ? note : nil) {
-                    Text(p).font(.footnote).foregroundStyle(Color.virtGold).multilineTextAlignment(.center)
+                    Text(p).font(.footnote).foregroundStyle(Color.virtAccent).multilineTextAlignment(.center)
                         .accessibilityIdentifier("doors-problem")
                 }
-                if busy { ProgressView().tint(.virtGold).accessibilityIdentifier("doors-busy") }
+                if busy { ProgressView().tint(.virtAccent).accessibilityIdentifier("doors-busy") }
                 if studioFallback && (step == .welcome || step == .apple) {
                     Button("Use the studio sign-in") { opened(.tyler) }
                         .font(.footnote).foregroundStyle(.white.opacity(0.55))
@@ -265,7 +265,7 @@ struct DoorsView: View {
                 Text("Get started").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.virtGold)
+            .tint(.virtAccent)
             .foregroundStyle(Color.virtBlack)
             .accessibilityIdentifier("get-started")
         }
@@ -276,10 +276,10 @@ struct DoorsView: View {
             Button { step = .apple } label: {
                 Text("Yes, I'm 13 or older").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
-            .buttonStyle(.borderedProminent).tint(.virtGold).foregroundStyle(Color.virtBlack)
+            .buttonStyle(.borderedProminent).tint(.virtAccent).foregroundStyle(Color.virtBlack)
             .accessibilityIdentifier("age-yes")
             Button { step = .under13 } label: { Text("No").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6) }
-                .buttonStyle(.bordered).tint(.virtGold)
+                .buttonStyle(.bordered).tint(.virtAccent)
                 .accessibilityIdentifier("age-no")
             back
         }
@@ -330,7 +330,7 @@ struct DoorsView: View {
             Button(action: sendName) {
                 Text("Continue").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
-            .buttonStyle(.borderedProminent).tint(.virtGold).foregroundStyle(Color.virtBlack)
+            .buttonStyle(.borderedProminent).tint(.virtAccent).foregroundStyle(Color.virtBlack)
             .disabled(busy || FriendSignIn.cleanName(typedName) == nil)
             .accessibilityIdentifier("name-continue")
             back
@@ -345,13 +345,13 @@ struct DoorsView: View {
             Button { opened(.tyler) } label: {
                 Text("Open the studio sign-in").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
-            .buttonStyle(.borderedProminent).tint(.virtGold).foregroundStyle(Color.virtBlack)
+            .buttonStyle(.borderedProminent).tint(.virtAccent).foregroundStyle(Color.virtBlack)
             .accessibilityIdentifier("open-studio")
             Button {
                 guard let t = pendingToken else { step = .apple; return }
                 send(token: t, name: typedName, askOwner: false)
             } label: { Text("Use a Time2Play account instead").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6) }
-                .buttonStyle(.bordered).tint(.virtGold)
+                .buttonStyle(.bordered).tint(.virtAccent)
                 .accessibilityIdentifier("as-friend")
         }
     }

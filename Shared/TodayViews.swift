@@ -13,10 +13,10 @@ struct WeekRing: View {
 
     var body: some View {
         ZStack {
-            Circle().stroke(Color.virtGold.opacity(0.22), lineWidth: lineWidth)
+            Circle().stroke(Color.virtAccent.opacity(0.22), lineWidth: lineWidth)
             if fraction > 0 {
                 Circle().trim(from: 0, to: min(1, fraction))
-                    .stroke(Color.virtGold, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .stroke(Color.virtAccent, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
         }
@@ -61,15 +61,15 @@ struct TodaySmall: View {
             VStack(spacing: 6) {
                 WeekCount(s: s, size: 104, lineWidth: 11)
                 Text(s.done ? "Done today" : s.title).font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .foregroundStyle(s.done ? Color.virtGold : .white).lineLimit(1).minimumScaleFactor(0.7).privacySensitive()
+                    .foregroundStyle(s.done ? Color.virtDone : .white).lineLimit(1).minimumScaleFactor(0.7).privacySensitive()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
-                    Text(s.caption).font(.caption2.weight(.bold)).foregroundStyle(Color.virtGold).kerning(0.6)
+                    Text(s.caption).font(.caption2.weight(.bold)).foregroundStyle(Color.virtAccent).kerning(0.6)
                     Spacer(minLength: 0)
-                    if s.done { Image(systemName: "checkmark.circle.fill").font(.subheadline).foregroundStyle(Color.virtGold) }
+                    if s.done { Image(systemName: "checkmark.circle.fill").font(.subheadline).foregroundStyle(Color.virtDone) }
                 }
                 Text(s.title).font(.system(size: 20, weight: .semibold, design: .rounded)).foregroundStyle(.white)
                     .lineLimit(2).minimumScaleFactor(0.75).privacySensitive()
@@ -103,15 +103,15 @@ struct TodayMedium: View {
             WeekCount(s: s, size: standBy ? 128 : 112, lineWidth: standBy ? 12 : 10)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    Text(s.caption).font(.caption2.weight(.bold)).foregroundStyle(Color.virtGold).kerning(0.6)
-                    if s.done { Image(systemName: "checkmark.circle.fill").font(.caption).foregroundStyle(Color.virtGold) }
+                    Text(s.caption).font(.caption2.weight(.bold)).foregroundStyle(Color.virtAccent).kerning(0.6)
+                    if s.done { Image(systemName: "checkmark.circle.fill").font(.caption).foregroundStyle(Color.virtDone) }
                 }
                 Text(s.title).font(.system(size: standBy ? 26 : 22, weight: .semibold, design: .rounded)).foregroundStyle(.white)
                     .lineLimit(2).minimumScaleFactor(0.7).privacySensitive()
                 Text(s.statusLine).font(.subheadline).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
                 Spacer(minLength: 2)
                 if let streak = s.streakLine {
-                    Label(streak, systemImage: "flame.fill").font(.caption.weight(.semibold)).foregroundStyle(Color.virtGold)
+                    Label(streak, systemImage: "flame.fill").font(.caption.weight(.semibold)).foregroundStyle(Color.virtAccent)
                         .labelStyle(.titleAndIcon).lineLimit(1)
                 }
                 if let n = s.next, n.inDays > 0 {

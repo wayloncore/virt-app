@@ -95,7 +95,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.accessibilityIdentifier = "studio"
 
-        refresher.tintColor = .virtGold
+        refresher.tintColor = .virtAccent
         refresher.addTarget(self, action: #selector(pulled), for: .valueChanged)
         web.scrollView.refreshControl = refresher
 
@@ -532,7 +532,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         l.text = "No signal. Training keeps working on this phone."
         l.font = .preferredFont(forTextStyle: .footnote)
         l.textColor = .virtBlack
-        l.backgroundColor = .virtGold
+        l.backgroundColor = .virtAccent
         l.layer.cornerRadius = 14
         l.clipsToBounds = true
         l.textAlignment = .center
@@ -704,7 +704,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         let buttons = UIStackView(arrangedSubviews: actions.map { name, run -> UIButton in
             let b = UIButton(type: .system, primaryAction: UIAction(title: name) { _ in run() })
             b.accessibilityIdentifier = "dbg-\(name)"
-            b.tintColor = .virtGold
+            b.tintColor = .virtAccent
             b.titleLabel?.adjustsFontSizeToFitWidth = true
             return b
         })
@@ -787,7 +787,7 @@ struct OfflineView: View {
                 Text("Retry").font(.headline).frame(maxWidth: 220).padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.virtGold)
+            .tint(.virtAccent)
             .foregroundStyle(Color.virtBlack)
             .accessibilityIdentifier("retry")
         }
@@ -799,7 +799,9 @@ struct OfflineView: View {
 
 extension UIColor {
     static let virtGold = UIColor(red: 0xDF / 255, green: 0xC2 / 255, blue: 0x97 / 255, alpha: 1)
-    static let virtBlack = UIColor(red: 0x0B / 255, green: 0x0A / 255, blue: 0x09 / 255, alpha: 1)
+    /// v3 (#746): graphite and the one red, as Color's (Shared.swift).
+    static let virtBlack = UIColor(red: 0x15 / 255, green: 0x17 / 255, blue: 0x1B / 255, alpha: 1)
+    static let virtAccent = UIColor(red: 0xFF / 255, green: 0x4B / 255, blue: 0x3A / 255, alpha: 1)
 
     /// A CSS color as getComputedStyle gives it: "rgb(r, g, b)" or "rgba(r, g, b, a)". nil if it's see-through.
     convenience init?(css: String?) {
