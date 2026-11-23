@@ -137,8 +137,10 @@ enum FriendAPI {
         }
     }
 
-    static func signIn(identityToken: String, name: String) async -> FriendSignIn.Outcome {
-        await call("apple", body: FriendSignIn.appleBody(identityToken: identityToken, name: name, over13: true, app: appVersion))
+    /// `over13` is the person's own answer; false until they've been asked. An account that exists ignores it, and a
+    /// new one without it comes back as `.tooYoung`, which is when the first screen asks.
+    static func signIn(identityToken: String, name: String, over13: Bool) async -> FriendSignIn.Outcome {
+        await call("apple", body: FriendSignIn.appleBody(identityToken: identityToken, name: name, over13: over13, app: appVersion))
     }
 
     /// Still signed in? false only when the server says the session is gone; nil when it can't tell (no signal).
@@ -221,7 +223,10 @@ struct DoorsView: View {
     /// This phone has used the studio's sign-in: offer it, small, as a fallback.
     var studioFallback = false
 
-    private enum Step: Equatable { case welcome, age, under13, apple, name, notLinked(String) }
+    /// Sign in with Apple is on the first screen (Tyler, Nov 23). The 13+ question comes after it, and only for
+    /// someone who has no account yet: Tyler and anyone coming back are in with one tap.
+    private enum Step: Equatable { case welcome, age, under13, name, notLinked(String) }
+    @State private var over13 = false
     @State private var step: Step = .welcome
     @State private var busy = false
     @State private var problem: String?
@@ -238,7 +243,6 @@ struct DoorsView: View {
                 case .welcome: welcome
                 case .age: age
                 case .under13: under13
-                case .apple: apple
                 case .name: name
                 case .notLinked(let code): notLinked(code)
                 }
@@ -247,7 +251,7 @@ struct DoorsView: View {
                         .accessibilityIdentifier("doors-problem")
                 }
                 if busy { ProgressView().tint(.virtAccent).accessibilityIdentifier("doors-busy") }
-                if studioFallback && (step == .welcome || step == .apple) {
+                if studioFallback && step == .welcome {
                     Button("Use the studio sign-in") { opened(.tyler) }
                         .font(.footnote).foregroundStyle(.white.opacity(0.55))
                         .disabled(busy)
@@ -267,38 +271,7 @@ struct DoorsView: View {
     }
 
     private var welcome: some View {
-        StepCard(title: "Welcome to Virt", text: "Your plan and your workouts, with a rest timer on the Lock Screen. Sign in with Apple to start. Only you see your training: no AI and no analytics.") {
-            Button { problem = nil; step = .age } label: {
-                Text("Get started").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.virtAccent)
-            .foregroundStyle(Color.virtBlack)
-            .accessibilityIdentifier("get-started")
-        }
-    }
-
-    private var age: some View {
-        StepCard(title: "Are you 13 or older?", text: "Virt uses a Time2Play account, and those are for 13 and up.") {
-            Button { step = .apple } label: {
-                Text("Yes, I'm 13 or older").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
-            }
-            .buttonStyle(.borderedProminent).tint(.virtAccent).foregroundStyle(Color.virtBlack)
-            .accessibilityIdentifier("age-yes")
-            Button { step = .under13 } label: { Text("No").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6) }
-                .buttonStyle(.bordered).tint(.virtAccent)
-                .accessibilityIdentifier("age-no")
-            back
-        }
-    }
-
-    private var under13: some View {
-        StepCard(title: "Not yet", text: "Virt is for 13 and up. Nothing was saved.") { back }
-    }
-
-    private var apple: some View {
-        StepCard(title: "Sign in with Apple",
-                 text: "This makes your Time2Play account (the same one the Time2Play app uses), or signs in to the one you have. Virt asks Apple for your first name only, never your email.") {
+        StepCard(title: "Welcome to Virt", text: "Your plan and your workouts, with a rest timer on the Lock Screen. Only you see your training: no AI and no analytics.") {
             SignInWithAppleButton(.signIn) { r in
                 r.requestedScopes = [.fullName]
             } onCompletion: { result in
@@ -320,8 +293,34 @@ struct DoorsView: View {
             .frame(height: 50)
             .disabled(busy)
             .accessibilityIdentifier("apple-sign-in")
+            Text("Virt asks Apple for your first name only, never your email.")
+                .font(.footnote).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
+        }
+    }
+
+    /// Asked after Sign in with Apple, and only when the server says this Apple ID has no account yet.
+    private var age: some View {
+        StepCard(title: "Are you 13 or older?", text: "Virt uses a Time2Play account, and those are for 13 and up.") {
+            Button {
+                over13 = true
+                guard let t = pendingToken else { step = .welcome; return }
+                send(token: t, name: typedName, askOwner: false)
+            } label: {
+                Text("Yes, I'm 13 or older").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent).tint(.virtAccent).foregroundStyle(Color.virtBlack)
+            .disabled(busy)
+            .accessibilityIdentifier("age-yes")
+            Button { pendingToken = nil; step = .under13 } label: { Text("No").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6) }
+                .buttonStyle(.bordered).tint(.virtAccent)
+                .disabled(busy)
+                .accessibilityIdentifier("age-no")
             back
         }
+    }
+
+    private var under13: some View {
+        StepCard(title: "Not yet", text: "Virt is for 13 and up. Nothing was saved.") { back }
     }
 
     private var name: some View {
@@ -355,7 +354,7 @@ struct DoorsView: View {
             .buttonStyle(.borderedProminent).tint(.virtAccent).foregroundStyle(Color.virtBlack)
             .accessibilityIdentifier("open-studio")
             Button {
-                guard let t = pendingToken else { step = .apple; return }
+                guard let t = pendingToken else { step = .welcome; return }
                 send(token: t, name: typedName, askOwner: false)
             } label: { Text("Use a Time2Play account instead").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6) }
                 .buttonStyle(.bordered).tint(.virtAccent)
@@ -364,7 +363,7 @@ struct DoorsView: View {
     }
 
     private var back: some View {
-        Button("Back") { problem = nil; pendingToken = nil; step = .welcome }
+        Button("Back") { problem = nil; pendingToken = nil; over13 = false; step = .welcome }
             .foregroundStyle(.white.opacity(0.75))
             .disabled(busy)
             .accessibilityIdentifier("doors-back")
@@ -396,7 +395,7 @@ struct DoorsView: View {
                     break
                 }
             }
-            let r = await FriendAPI.signIn(identityToken: token, name: name)
+            let r = await FriendAPI.signIn(identityToken: token, name: name, over13: over13)
             busy = false
             switch r {
             case .signedIn(let s):
@@ -408,10 +407,12 @@ struct DoorsView: View {
                 step = .name
                 if FriendSignIn.cleanName(name) != nil { problem = "Pick a name of at least two characters." }
             case .tooYoung:
-                step = .under13
+                // a new account: ask the 13+ question once, then send the same sign-in with the answer
+                if over13 { pendingToken = nil; step = .under13 } else { pendingToken = token; step = .age }
             case .signedOut:
                 problem = "That sign-in didn't go through. Try again."
-                step = .apple
+                pendingToken = nil
+                step = .welcome
             case .failed(let why):
                 problem = why
             }

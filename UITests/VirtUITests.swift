@@ -97,25 +97,18 @@ final class VirtUITests: XCTestCase {
 
     // MARK: - Training for friends (#578, part 2)
 
-    /// A new phone (#732): one way in. Get started, the 13+ question, then Sign in with Apple (a simulator can't finish
+    /// A new phone (#732): one way in, Sign in with Apple on the first screen (a simulator can't finish
     /// it). On a phone that has used the studio, its sign-in is offered small, and it opens inside the app as before.
     func testOneSignInFirst() {
         let app = launch(args: ["-uitest-door-none", "-uitest-studio-used"])
-        let start = app.buttons["get-started"]
-        XCTAssertTrue(start.waitForExistence(timeout: 15), "the first screen: Get started")
+        let apple = app.buttons["apple-sign-in"]
+        XCTAssertTrue(apple.waitForExistence(timeout: 15) || app.buttons["Sign in with Apple"].exists, "the first screen: Sign in with Apple (a simulator can't finish it)")
         XCTAssertTrue(app.staticTexts["Welcome to Virt"].exists)
+        XCTAssertFalse(app.buttons["get-started"].exists, "no step before Sign in with Apple")
+        XCTAssertFalse(app.buttons["age-yes"].exists, "the 13+ question waits until a new account needs it")
         XCTAssertFalse(app.staticTexts["Training for friends"].exists, "no door choice")
         sleep(1)
         shot("welcome")
-
-        start.tap()
-        let yes = app.buttons["age-yes"]
-        XCTAssertTrue(yes.waitForExistence(timeout: 5), "the 13+ question first")
-        yes.tap()
-        let apple = app.buttons["apple-sign-in"]
-        XCTAssertTrue(apple.waitForExistence(timeout: 5) || app.buttons["Sign in with Apple"].exists, "Sign in with Apple")
-        shot("apple")
-        app.buttons["doors-back"].tap()
 
         let tyler = app.buttons["door-tyler"]
         XCTAssertTrue(tyler.waitForExistence(timeout: 5), "the studio's sign-in, on a phone that used it")
@@ -130,7 +123,8 @@ final class VirtUITests: XCTestCase {
     /// studio's sign-in small underneath. It never opens Cloudflare by itself. The next launch keeps his choice.
     func testAStudioPhoneIsOfferedAppleOnce() {
         let app = launch(args: ["-uitest-apple-not-asked"])
-        XCTAssertTrue(app.buttons["get-started"].waitForExistence(timeout: 15), "the first screen, not the studio's sign-in")
+        XCTAssertTrue(app.staticTexts["Welcome to Virt"].waitForExistence(timeout: 15), "the first screen, not the studio's sign-in")
+        XCTAssertTrue(app.buttons["apple-sign-in"].exists || app.buttons["Sign in with Apple"].exists, "Sign in with Apple, right there")
         XCTAssertTrue(app.buttons["door-tyler"].exists, "the studio's sign-in is still there, small")
         XCTAssertFalse(status(app).contains("cloudflareaccess.com"), status(app))
         sleep(1)
@@ -140,11 +134,7 @@ final class VirtUITests: XCTestCase {
     /// A friend's phone (never used the studio): no studio sign-in anywhere on the first screen.
     func testAFriendsPhoneHasNoStudioDoor() {
         let app = launch(args: ["-uitest-door-none"])
-        XCTAssertTrue(app.buttons["get-started"].waitForExistence(timeout: 15))
-        XCTAssertFalse(app.buttons["door-tyler"].exists, "no studio sign-in on a friend's phone")
-        app.buttons["get-started"].tap()
-        XCTAssertTrue(app.buttons["age-yes"].waitForExistence(timeout: 5))
-        app.buttons["age-yes"].tap()
+        XCTAssertTrue(app.staticTexts["Welcome to Virt"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 5) || app.buttons["Sign in with Apple"].exists)
         XCTAssertFalse(app.buttons["door-tyler"].exists, "no studio sign-in on a friend's phone")
     }
@@ -171,7 +161,7 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(status(app).contains("workout Full body A"), status(app))
 
         web.buttons["Sign out here"].tap()
-        XCTAssertTrue(app.buttons["get-started"].waitForExistence(timeout: 10), "signed out: the first screen")
+        XCTAssertTrue(app.staticTexts["Welcome to Virt"].waitForExistence(timeout: 10), "signed out: the first screen")
     }
 
     /// With no way to reach the studio: the plain offline screen, and Retry.
