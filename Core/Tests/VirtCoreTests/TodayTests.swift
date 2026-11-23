@@ -218,6 +218,8 @@ final class TodayTests: XCTestCase {
     }
 
     func testRemindersAndTimerAlertsFitIOSsLimit() {
-        XCTAssertLessThanOrEqual(TimerBoard.alertLimit + ReminderPlan.daysAhead + 2, 64)
+        XCTAssertLessThanOrEqual(TimerBoard.alertLimit + ReminderPlan.daysAhead + 1, 64, "the streak nudge is one at a time")
+        let both = wed { $0.streak = 3; $0.streakAtRisk = true; $0.streakAtRiskTomorrow = true }
+        XCTAssertEqual(ReminderPlan.streakPlan(both, now: at(18, 7), calendar: cal).count, 1)
     }
 }

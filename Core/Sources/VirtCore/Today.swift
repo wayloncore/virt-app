@@ -368,7 +368,8 @@ public enum ReminderPlan {
         }
         if theirs == today {
             if info.streakAtRisk == true, info.done != true, !workoutGoing { add(today) }
-            if info.streakAtRiskTomorrow == true { add(tomorrow) }
+            // one at a time (iOS keeps 64 pending, and the timer's alerts and the week's reminders use 63)
+            if out.isEmpty, info.streakAtRiskTomorrow == true { add(tomorrow) }
         } else if theirNext == today, info.streakAtRiskTomorrow == true {
             add(today)   // last night's copy: this morning's nudge stays until the page opens
         }
