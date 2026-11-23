@@ -32,6 +32,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private var statusLine: UILabel?
     /// The saved copy has been tried once for the page that failed (OfflinePolicy).
     private var triedCache = false
+    /// The offline screen has been skipped once for this page with a quiet second try (reset when a page shows).
+    private var retriedQuietly = false
     private var noSignal: UILabel?
     private var readyWork: DispatchWorkItem?
     /// The last load error, for the test build's status line.
@@ -126,6 +128,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     private func loadStart() {
         guard let door else { return }
+        triedCache = false  // a fresh start: nothing left over from the door before
         if let html = testHTML {
             let base = door == .friend ? Navigation.friendHome : URL(string: "https://studio.tyleralocke.com/virt-bridge-test")!
             web.loadHTMLString(html, baseURL: base)
@@ -525,13 +528,23 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             return
         }
         let code = e.domain == NSURLErrorDomain ? e.code : nil
+        // a load that was cancelled because another one took its place (the page handing over a sign-in, a redirect)
+        // isn't a failure: the new one is already on its way
+        if code == NSURLErrorCancelled, web.isLoading { return updateStatusLine() }
         switch OfflinePolicy.choose(urlErrorCode: code, hasPage: web.backForwardList.currentItem != nil, triedCache: triedCache) {
         case .ignore: break
         case .keepPage: showNoSignal()
         case .tryCache:
             triedCache = true
             web.load(URLRequest(url: failing ?? startURL, cachePolicy: .returnCacheDataDontLoad))
-        case .showOffline: showError(error)
+        case .showOffline:
+            // right after signing in, the first load can be cut short once; try again quietly before saying so
+            if !retriedQuietly {
+                retriedQuietly = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.retry() }
+            } else {
+                showError(error)
+            }
         }
         updateStatusLine()
     }
@@ -598,6 +611,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         triedCache = false
+        // a page is showing: an offline screen from a moment ago comes down (about:blank after signing out isn't one)
+        if webView.url?.scheme != "about" { retriedQuietly = false; removeError() }
         hideSplash()
         updateStatusLine()
     }
