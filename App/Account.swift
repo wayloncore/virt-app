@@ -223,10 +223,11 @@ struct DoorsView: View {
     /// This phone has used the studio's sign-in: offer it, small, as a fallback.
     var studioFallback = false
 
-    /// Sign in with Apple is on the first screen (Tyler, Nov 23). The 13+ question comes after it, and only for
-    /// someone who has no account yet: Tyler and anyone coming back are in with one tap.
+    /// Sign in with Apple is on the first screen, and nothing comes before or after it but a new person's name
+    /// (Tyler, Nov 23: no age question). The first screen says Virt is for 13 and up, and signing in confirms it;
+    /// `over13` stays true. The question screen is kept for the day it's wanted again, and nothing leads to it.
     private enum Step: Equatable { case welcome, age, under13, name, notLinked(String) }
-    @State private var over13 = false
+    @State private var over13 = true
     @State private var step: Step = .welcome
     @State private var busy = false
     @State private var problem: String?
@@ -293,7 +294,7 @@ struct DoorsView: View {
             .frame(height: 50)
             .disabled(busy)
             .accessibilityIdentifier("apple-sign-in")
-            Text("Virt asks Apple for your first name only, never your email.")
+            Text("For ages 13 and up. Signing in confirms you are. Virt asks Apple for your first name only, never your email.")
                 .font(.footnote).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
         }
     }
@@ -363,7 +364,7 @@ struct DoorsView: View {
     }
 
     private var back: some View {
-        Button("Back") { problem = nil; pendingToken = nil; over13 = false; step = .welcome }
+        Button("Back") { problem = nil; pendingToken = nil; step = .welcome }
             .foregroundStyle(.white.opacity(0.75))
             .disabled(busy)
             .accessibilityIdentifier("doors-back")

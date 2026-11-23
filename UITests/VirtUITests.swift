@@ -105,7 +105,7 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(apple.waitForExistence(timeout: 15) || app.buttons["Sign in with Apple"].exists, "the first screen: Sign in with Apple (a simulator can't finish it)")
         XCTAssertTrue(app.staticTexts["Welcome to Virt"].exists)
         XCTAssertFalse(app.buttons["get-started"].exists, "no step before Sign in with Apple")
-        XCTAssertFalse(app.buttons["age-yes"].exists, "the 13+ question waits until a new account needs it")
+        XCTAssertFalse(app.buttons["age-yes"].exists, "no 13+ question: the first screen says 13 and up")
         XCTAssertFalse(app.staticTexts["Training for friends"].exists, "no door choice")
         sleep(1)
         shot("welcome")
