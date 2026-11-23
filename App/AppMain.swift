@@ -31,6 +31,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
                 if let t = ProcessInfo.processInfo.environment["VIRT_FRIEND_TOKEN"] { FriendKeeper.save(FriendSession(token: t, name: "Sam")) }
             } else {
                 DoorStore.choose(.tyler)
+                // every other test is Tyler's studio door as before; `-uitest-apple-not-asked` is his phone from
+                // before Apple sign-in, which gets the first screen once
+                DoorStore.appleAsked = !args.contains("-uitest-apple-not-asked")
             }
         }
         #endif

@@ -26,6 +26,18 @@ public enum Door: String, Codable, Sendable, CaseIterable {
         return usedBefore ? .tyler : nil
     }
 
+    /// Whether this phone has been shown Sign in with Apple in place of the studio's sign-in (UserDefaults; a new key).
+    public static let appleAskedKey = "virt.apple-asked"
+
+    /// The door at launch once everyone signs in with Apple (#732). A phone still set to the studio's Cloudflare
+    /// sign-in (Tyler's, from before Apple sign-in) is shown the first screen once, so his Apple ID opens his own
+    /// Training with no Cloudflare login. After that one time the saved choice stands: if he picks the studio's
+    /// sign-in there, it's remembered and never asked again.
+    public static func atLaunch(saved: String?, usedBefore: Bool, appleAsked: Bool) -> Door? {
+        let d = resolve(saved: saved, usedBefore: usedBefore)
+        return d == .tyler && !appleAsked ? nil : d
+    }
+
     /// Where Training starts for this door.
     public var home: URL {
         switch self {
