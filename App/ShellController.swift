@@ -34,6 +34,9 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private var triedCache = false
     /// The offline screen has been skipped once for this page with a quiet second try (reset when a page shows).
     private var retriedQuietly = false
+    /// The error that sent us to the saved copy: the real reason, shown on the offline screen in place of the
+    /// saved-copy try's own "cancelled".
+    private var firstError: Error?
     private var noSignal: UILabel?
     private var readyWork: DispatchWorkItem?
     /// The last load error, for the test build's status line.
@@ -129,6 +132,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private func loadStart() {
         guard let door else { return }
         triedCache = false  // a fresh start: nothing left over from the door before
+        firstError = nil
         if let html = testHTML {
             let base = door == .friend ? Navigation.friendHome : URL(string: "https://studio.tyleralocke.com/virt-bridge-test")!
             web.loadHTMLString(html, baseURL: base)
@@ -479,7 +483,11 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         refresher.endRefreshing()
         hideSplash()
         errorHost?.view.removeFromSuperview()
-        let host = UIHostingController(rootView: OfflineView(detail: error.localizedDescription,
+        let ns = error as NSError
+        let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.host ?? "no address"
+        // the reason in full (what failed, where), so a screenshot of this screen says what to fix
+        let detail = "\(ns.localizedDescription) (\(ns.domain) \(ns.code), \(failing))"
+        let host = UIHostingController(rootView: OfflineView(detail: detail,
                                                              place: door == .friend ? "Training" : "the studio") { [weak self] in self?.retry() })
         host.view.backgroundColor = .virtBlack
         host.view.translatesAutoresizingMaskIntoConstraints = false
@@ -536,6 +544,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         case .keepPage: showNoSignal()
         case .tryCache:
             triedCache = true
+            firstError = error
             web.load(URLRequest(url: failing ?? startURL, cachePolicy: .returnCacheDataDontLoad))
         case .showOffline:
             // right after signing in, the first load can be cut short once; try again quietly before saying so
@@ -543,7 +552,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
                 retriedQuietly = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.retry() }
             } else {
-                showError(error)
+                showError(firstError ?? error)
             }
         }
         updateStatusLine()
