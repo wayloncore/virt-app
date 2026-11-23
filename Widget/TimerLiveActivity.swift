@@ -42,14 +42,14 @@ struct TimerLiveActivity: Widget {
         ActivityConfiguration(for: VirtTimerAttributes.self) { context in
             LockScreenTimer(title: context.attributes.title, d: context.state.current(at: Date()))
                 .activityBackgroundTint(Color.virtBlack.opacity(0.92))
-                .activitySystemActionForegroundColor(.virtGold)
+                .activitySystemActionForegroundColor(.virtAccent)
         } dynamicIsland: { context in
             let d = context.state.current(at: Date())
             let between = d.betweenSets == true
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Label(between ? (d.setExercise ?? d.label) : d.label, systemImage: between ? "dumbbell.fill" : symbol(d.kind))
-                        .font(.headline).foregroundStyle(Color.virtGold).lineLimit(1)
+                        .font(.headline).foregroundStyle(Color.virtAccent).lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if !between { ClockText(d: d).font(.title2.weight(.semibold)).foregroundStyle(.white) }
@@ -70,22 +70,22 @@ struct TimerLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                Image(systemName: between ? "dumbbell.fill" : symbol(d.kind)).foregroundStyle(Color.virtGold)
+                Image(systemName: between ? "dumbbell.fill" : symbol(d.kind)).foregroundStyle(Color.virtAccent)
             } compactTrailing: {
                 if between {
                     Text(d.logButton.map { $0.replacingOccurrences(of: "Log set", with: "Set") } ?? "Done").font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.virtGold)
+                        .foregroundStyle(Color.virtAccent)
                 } else {
-                    ClockText(d: d).foregroundStyle(Color.virtGold).frame(maxWidth: 52)
+                    ClockText(d: d).foregroundStyle(Color.virtAccent).frame(maxWidth: 52)
                 }
             } minimal: {
                 if between {
-                    Image(systemName: "dumbbell.fill").foregroundStyle(Color.virtGold)
+                    Image(systemName: "dumbbell.fill").foregroundStyle(Color.virtAccent)
                 } else {
-                    ClockText(d: d).font(.caption2).foregroundStyle(Color.virtGold)
+                    ClockText(d: d).font(.caption2).foregroundStyle(Color.virtAccent)
                 }
             }
-            .keylineTint(.virtGold)
+            .keylineTint(.virtAccent)
         }
     }
 }

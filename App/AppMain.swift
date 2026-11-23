@@ -62,7 +62,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             w.rootViewController = UIHostingController(rootView: WidgetGallery())
         }
         #endif
-        w.tintColor = .virtGold
+        w.tintColor = .virtAccent
         w.makeKeyAndVisible()
         window = w
         shell = s

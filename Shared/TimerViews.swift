@@ -31,7 +31,7 @@ struct LockScreenTimer: View {
             HStack(alignment: .lastTextBaseline, spacing: 12) {
                 Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
                 Spacer(minLength: 4)
-                ClockText(d: d).font(.system(size: 58, weight: .bold, design: .rounded)).foregroundStyle(Color.virtGold)
+                ClockText(d: d).font(.system(size: 58, weight: .bold, design: .rounded)).foregroundStyle(Color.white)
                     .lineLimit(1).minimumScaleFactor(0.6)
             }
             // its own row, the card's whole width: beside the clock it was cut off ("Next: set 3 of 4 · 105…")
@@ -47,11 +47,11 @@ struct LockScreenTimer: View {
                     VStack(alignment: .leading, spacing: 3) {
                         // with a set to log next, its exercise takes the day's place (the next line says which set)
                         Text((d.setExercise ?? title).uppercased()).font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.virtGold.opacity(0.8)).lineLimit(1)
+                            .foregroundStyle(Color.white.opacity(0.65)).lineLimit(1)
                         Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(.white).lineLimit(1)
                     }
                     Spacer(minLength: 8)
-                    ClockText(d: d).font(.system(size: 46, weight: .bold, design: .rounded)).foregroundStyle(Color.virtGold)
+                    ClockText(d: d).font(.system(size: 46, weight: .bold, design: .rounded)).foregroundStyle(Color.white)
                         .lineLimit(1).minimumScaleFactor(0.6)
                 }
                 // its own row under the clock, the card's whole width: squeezed beside the clock it was cut off
@@ -100,7 +100,7 @@ struct Bar: View {
             }
         }
         .progressViewStyle(.linear)
-        .tint(.virtGold)
+        .tint(.virtAccent)
     }
 }
 
@@ -113,7 +113,7 @@ struct BetweenSets: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(Color.virtGold.opacity(0.8))
+                Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(Color.white.opacity(0.65))
                 Label(d.setExercise ?? d.label, systemImage: "dumbbell.fill").font(.headline).foregroundStyle(.white).lineLimit(1)
                 Text(d.setDetail ?? "").font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
             }
@@ -137,7 +137,7 @@ struct LogButton: View {
                 .foregroundStyle(Color.virtBlack)
         }
         .buttonStyle(.borderedProminent)
-        .tint(.virtGold)
+        .tint(.virtAccent)
         .accessibilityLabel(words)
     }
 }
@@ -178,7 +178,7 @@ struct NextLine: View {
 
     private func row(_ words: String) -> some View {
         HStack(spacing: 4) {
-            if d.paused { Text("Paused ·").foregroundStyle(Color.virtGold) }
+            if d.paused { Text("Paused ·").foregroundStyle(Color.virtAccent) }
             Text(words)
                 .foregroundStyle(.white.opacity(0.75))
                 .lineLimit(1)
@@ -208,7 +208,7 @@ struct Buttons: View {
             if let words = d.logButton { LogButton(words: words) }
         }
         .buttonStyle(.bordered)
-        .tint(.virtGold)
+        .tint(.virtAccent)
         .font(.body.weight(.semibold))
     }
 }

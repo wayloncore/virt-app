@@ -30,7 +30,12 @@ struct TimerCommandIntent: LiveActivityIntent {
 }
 
 extension Color {
-    /// Sampled from the app icon's gold face, and its black.
+    /// Sampled from the app icon's gold face. Since v3 (#746): the mark and records only, never an action.
     static let virtGold = Color(red: 0xDF / 255, green: 0xC2 / 255, blue: 0x97 / 255)
-    static let virtBlack = Color(red: 0x0B / 255, green: 0x0A / 255, blue: 0x09 / 255)
+    /// The app's own dark: v3's graphite (the website's --v3-ink, src/lib/training/v3/tokens.css). Was #0B0A09.
+    static let virtBlack = Color(red: 0x15 / 255, green: 0x17 / 255, blue: 0x1B / 255)
+    /// v3's one action color on graphite (--v3-red): buttons, the rest ring, links. 5.4:1 on virtBlack.
+    static let virtAccent = Color(red: 0xFF / 255, green: 0x4B / 255, blue: 0x3A / 255)
+    /// Done (--v3-good on graphite).
+    static let virtDone = Color(red: 0x59 / 255, green: 0xCF / 255, blue: 0x8B / 255)
 }

@@ -45,8 +45,9 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
   Connect app there), then the signed build uploaded to TestFlight and the internal testing group. Its build number is
   the run number. `scripts/asc.py` talks to App Store Connect with the key in secrets (ASC_ISSUER_ID, ASC_KEY_ID,
   ASC_KEY_P8, the same key as time2play-app, so the two apps share one distribution certificate).
-- App icon: `App/Assets.xcassets/AppIcon.appiconset` (the gold nested V on black, 1024 × 1024, no alpha). Colors: gold
-  `#DFC297` (sampled from the icon) and black `#0B0A09`.
+- App icon: `App/Assets.xcassets/AppIcon.appiconset` (the gold nested V on black, 1024 × 1024, no alpha). Colors (v3, #746): graphite `#15171B`, the one action red
+  `#FF4B3A` and done-green `#59CF8B`, matching the website's v3 tokens; gold `#DFC297` (sampled from the icon) is the mark
+  and records only. The launch, intro and lock screens stay pure black with the gold V.
 
 ## The two doors (#578 part 2, #580)
 The first screen on a new phone (`App/Account.swift`, `DoorsView`) asks which way in; the choice is saved
