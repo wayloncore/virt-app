@@ -60,6 +60,14 @@ The first screen on a new phone (`App/Account.swift`, `DoorsView`) asks which wa
   this phone's Keychain (`FriendKeeper`, service `com.tyleralocke.virt.friend`), then train.time2play.live with the
   session handed over as `window.T2P_SESSION` before the page runs (`FriendSignIn.handoverScript`, that host only).
   The page's "Sign out here" posts to Virt's own `virtAccount` handler, and Virt signs out too.
+- The first screen (Tyler, Nov 23): pure black, his VIRT word (`VirtWord`, cropped from the launch clip's own frame, so
+  the pillar I is his artwork; never re-letter it), "Strength is a virtue. Build it daily.", Sign in with Apple at the
+  bottom, and "For ages 13 and up. Terms · Privacy". Once his Apple ID has opened his Training on a phone
+  (`virt.owner-apple`), the studio's sign-in is never offered there again, and a sign-in that can't reach his
+  Training says so instead of opening a friend's account (`Door.offersStudio`, `Door.ownerStep`).
+- The streak's morning nudge: `today` may carry `streak`, `streakAtRisk` and `streakAtRiskTomorrow` (website #804);
+  with reminders on, Virt sets one plain notification at 9:00 on such a day (`ReminderPlan.streakPlan`). "Remind me"
+  asks iOS for alerts, and if iOS has them off for Virt, offers the way to Settings.
 - A friend's web view opens only train.time2play.live inside; the studio and everything else go to Safari. Signing
   out of either door clears the widgets' `today`, the reminders, any timer, and that door's sign-in on the phone.
 - The server checks the Apple token's audience; it has to accept `com.tyleralocke.virt` as well as Time2Play's

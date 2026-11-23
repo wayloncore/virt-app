@@ -104,7 +104,7 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Training-day reminders", isOn: $remindersOn)
-                        .onChange(of: remindersOn) { _, on in on ? Reminders.shared.turnOn() : Reminders.shared.turnOff() }
+                        .onChange(of: remindersOn) { _, on in on ? Reminders.shared.turnOn { Reminders.offerSettings(from: Reminders.topController()) } : Reminders.shared.turnOff() }
                         .accessibilityIdentifier("reminders-toggle")
                     if alertsDenied {
                         Button("Turn on notifications for Virt") {

@@ -84,4 +84,13 @@ final class BridgeMessageTests: XCTestCase {
         let old = #"{"id":"rest:1","kind":"rest","label":"Rest","next":"x","paused":false}"#
         XCTAssertNoThrow(try JSONDecoder().decode(TimerDisplay.self, from: Data(old.utf8)))
     }
+
+    func testTodayReadsTheStreakFieldsWhenThePageSendsThem() {
+        let with = read(#"{"type":"today","date":"2026-11-18","streak":12,"streakAtRisk":true,"streakAtRiskTomorrow":false}"#)
+        guard case .today(let t)? = with else { return XCTFail("today") }
+        XCTAssertEqual(t.streak, 12); XCTAssertEqual(t.streakAtRisk, true); XCTAssertEqual(t.streakAtRiskTomorrow, false)
+        let without = read(#"{"type":"today","date":"2026-11-18"}"#)
+        guard case .today(let o)? = without else { return XCTFail("today") }
+        XCTAssertNil(o.streak); XCTAssertNil(o.streakAtRisk)
+    }
 }

@@ -194,7 +194,30 @@ final class TodayTests: XCTestCase {
         XCTAssertTrue(ReminderPlan.plan(wed { $0.trainingDays = [9] }, now: wedNoon, calendar: cal).isEmpty)
     }
 
+    func testTheStreakNudgeComesInTheMorning() {
+        let early = at(18, 7)
+        let risk = wed { $0.streak = 12; $0.streakAtRisk = true }
+        let r = ReminderPlan.streakPlan(risk, now: early, calendar: cal)
+        XCTAssertEqual(r.map(\.fireAt), [at(18, 9)], "9:00, not right before the day ends")
+        XCTAssertEqual(r.first?.identifier, "virt.reminder.streak.2026-11-18")
+        XCTAssertEqual(r.first?.title, "Keep your 12-day streak")
+        XCTAssertTrue(ReminderPlan.streakPlan(risk, now: wedNoon, calendar: cal).isEmpty, "past 9: nothing late in the day")
+        XCTAssertTrue(ReminderPlan.streakPlan(wed { $0.streak = 12; $0.streakAtRisk = true; $0.done = true }, now: early, calendar: cal).isEmpty)
+        XCTAssertTrue(ReminderPlan.streakPlan(risk, now: early, calendar: cal, workoutGoing: true).isEmpty)
+        XCTAssertTrue(ReminderPlan.streakPlan(wed { $0.streak = 0; $0.streakAtRisk = true }, now: early, calendar: cal).isEmpty, "no streak, no nudge")
+        XCTAssertTrue(ReminderPlan.streakPlan(wed { $0.streak = 12 }, now: early, calendar: cal).isEmpty, "rest left this week: nothing")
+        XCTAssertTrue(ReminderPlan.streakPlan(wed(), now: early, calendar: cal).isEmpty, "an older page that doesn't say: nothing")
+    }
+
+    func testTheStreakNudgeIsSetTheNightBefore() {
+        let tonight = wed { $0.streak = 5; $0.done = true; $0.streakAtRiskTomorrow = true }
+        XCTAssertEqual(ReminderPlan.streakPlan(tonight, now: at(18, 21), calendar: cal).map(\.fireAt), [at(19, 9)])
+        XCTAssertEqual(ReminderPlan.streakPlan(tonight, now: at(19, 7), calendar: cal).map(\.fireAt), [at(19, 9)],
+                       "the next morning, before the page has opened, it's still there")
+        XCTAssertTrue(ReminderPlan.streakPlan(tonight, now: at(20, 7), calendar: cal).isEmpty, "two days on: too old to trust")
+    }
+
     func testRemindersAndTimerAlertsFitIOSsLimit() {
-        XCTAssertLessThanOrEqual(TimerBoard.alertLimit + ReminderPlan.daysAhead, 64)
+        XCTAssertLessThanOrEqual(TimerBoard.alertLimit + ReminderPlan.daysAhead + 2, 64)
     }
 }

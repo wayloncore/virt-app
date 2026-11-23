@@ -24,15 +24,23 @@ public struct TodayInfo: Codable, Equatable, Sendable {
     public var trainingDays: [Int]?
     /// When he usually starts, "HH:MM" (24-hour), from his history.
     public var usualTime: String?
+    /// Days in a row, by Training's own rule (added field, optional).
+    public var streak: Int?
+    /// Today could cost the streak: no rest left this week and today isn't done (added field, optional).
+    public var streakAtRisk: Bool?
+    /// The same, for tomorrow as things stand now, so the morning nudge can be set the night before (added, optional).
+    public var streakAtRiskTomorrow: Bool?
     /// When Virt got it (Virt's own field, not the page's).
     public var receivedAt: Date?
 
     public init(date: String? = nil, title: String? = nil, kind: String? = nil, done: Bool? = nil, minutes: Int? = nil,
                 weekDone: Int? = nil, weekPlanned: Int? = nil, streakWeeks: Int? = nil, trainingDays: [Int]? = nil,
-                usualTime: String? = nil, receivedAt: Date? = nil) {
+                usualTime: String? = nil, streak: Int? = nil, streakAtRisk: Bool? = nil,
+                streakAtRiskTomorrow: Bool? = nil, receivedAt: Date? = nil) {
         self.date = date; self.title = title; self.kind = kind; self.done = done; self.minutes = minutes
         self.weekDone = weekDone; self.weekPlanned = weekPlanned; self.streakWeeks = streakWeeks
         self.trainingDays = trainingDays; self.usualTime = usualTime; self.receivedAt = receivedAt
+        self.streak = streak; self.streakAtRisk = streakAtRisk; self.streakAtRiskTomorrow = streakAtRiskTomorrow
     }
 
     /// The same plan, ignoring when it arrived (to tell whether anything changed).
@@ -334,6 +342,37 @@ public enum ReminderPlan {
     /// Where "Move it" puts today's reminder: an hour after it was due, or an hour from now if that's later.
     public static func moved(from due: Date?, now: Date) -> Date {
         max(now, due ?? now).addingTimeInterval(moveBy)
+    }
+
+    // MARK: - The streak's morning nudge (Tyler, Nov 23)
+
+    /// When the streak nudge comes: in the morning, never right before the day ends.
+    public static let streakHour = 9
+    public static let streakPrefix = "virt.reminder.streak."
+
+    /// One quiet nudge at 9:00 on a day that could cost the streak: today if the page says today is at risk and it
+    /// isn't done, and tomorrow if the page says tomorrow would be (set the night before; it stays in place the
+    /// next morning until the page says otherwise). Nothing at a streak of zero, and nothing from an older copy.
+    public static func streakPlan(_ info: TodayInfo?, now: Date, calendar: Calendar = .current,
+                                  workoutGoing: Bool = false) -> [PlannedReminder] {
+        guard let info, let n = info.streak, n > 0 else { return [] }
+        let today = calendar.startOfDay(for: now)
+        guard let theirs = TodayInfo.day(info.date, calendar: calendar) ?? info.receivedAt.map({ calendar.startOfDay(for: $0) }),
+              let tomorrow = calendar.date(byAdding: .day, value: 1, to: today),
+              let theirNext = calendar.date(byAdding: .day, value: 1, to: theirs) else { return [] }
+        var out: [PlannedReminder] = []
+        func add(_ day: Date) {
+            guard let at = calendar.date(bySettingHour: streakHour, minute: 0, second: 0, of: day), at > now else { return }
+            out.append(PlannedReminder(identifier: streakPrefix + dayKey(day, calendar: calendar), fireAt: at,
+                                       title: "Keep your \(n)-day streak", body: "A workout today keeps it going."))
+        }
+        if theirs == today {
+            if info.streakAtRisk == true, info.done != true, !workoutGoing { add(today) }
+            if info.streakAtRiskTomorrow == true { add(tomorrow) }
+        } else if theirNext == today, info.streakAtRiskTomorrow == true {
+            add(today)   // last night's copy: this morning's nudge stays until the page opens
+        }
+        return out
     }
 
     static func dayKey(_ d: Date, calendar: Calendar) -> String {

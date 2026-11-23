@@ -47,7 +47,10 @@ import VirtCore
     /// Puts the week's reminders in place (replacing whatever was scheduled).
     func refresh(today: TodayInfo?, workoutGoing: Bool) {
         let center = UNUserNotificationCenter.current()
-        let plan = enabled == true ? ReminderPlan.plan(today, now: Date(), movedTo: movedTo, workoutGoing: workoutGoing) : []
+        let plan = enabled == true
+            ? ReminderPlan.plan(today, now: Date(), movedTo: movedTo, workoutGoing: workoutGoing)
+                + ReminderPlan.streakPlan(today, now: Date(), workoutGoing: workoutGoing)
+            : []
         count = plan.count
         center.getPendingNotificationRequests { reqs in
             let old = reqs.map(\.identifier).filter { $0.hasPrefix(ReminderPlan.prefix) }
@@ -57,7 +60,8 @@ import VirtCore
                 content.title = r.title
                 content.body = r.body
                 content.sound = .default
-                content.categoryIdentifier = Self.category
+                // the streak's morning nudge is a plain note: no Move it, no Start
+                if !r.identifier.hasPrefix(ReminderPlan.streakPrefix) { content.categoryIdentifier = Self.category }
                 content.threadIdentifier = "virt.reminder"
                 content.interruptionLevel = .active
                 let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: r.fireAt)
@@ -73,12 +77,44 @@ import VirtCore
         Engine.shared.refreshReminders()
     }
 
-    /// He said yes: turn them on, asking iOS for alerts if it hasn't been asked yet.
-    func turnOn() {
+    /// He said yes: turn them on, asking iOS for alerts if it hasn't been asked yet. If iOS has alerts off for Virt
+    /// (he said no to its question once, or switched them off), iOS won't ask again, so `blocked` runs and the
+    /// caller offers the way to Settings (Tyler, Nov 23: saying yes must actually lead to iOS allowing them).
+    func turnOn(blocked: (@MainActor () -> Void)? = nil) {
         enabled = true
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in
-            Task { @MainActor in Engine.shared.refreshReminders() }
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            if settings.authorizationStatus == .denied {
+                Task { @MainActor in blocked?() }
+                return
+            }
+            center.requestAuthorization(options: [.alert, .sound]) { ok, _ in
+                Task { @MainActor in
+                    Engine.shared.refreshReminders()
+                    if !ok { blocked?() }
+                }
+            }
         }
+    }
+
+    /// The window's root, for an alert asked for from a SwiftUI sheet.
+    static func topController() -> UIViewController? {
+        UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }.first
+    }
+
+    /// "Notifications are off for Virt": one alert with the way to Virt's page in Settings.
+    static func offerSettings(from host: UIViewController?) {
+        guard let host else { return }
+        let a = UIAlertController(title: "Notifications are off for Virt",
+                                  message: "Turn them on in Settings and your reminders will come through.",
+                                  preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "Not now", style: .cancel))
+        a.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
+            if let u = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(u) }
+        })
+        var top = host
+        while let p = top.presentedViewController, !p.isBeingDismissed { top = p }
+        top.present(a, animated: true)
     }
 
     func turnOff() {
