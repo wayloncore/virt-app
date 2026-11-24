@@ -43,5 +43,8 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(BridgeMessage.isGuestSignIn(object: ["type": "signIn", "from": "guest"]))
         XCTAssertFalse(BridgeMessage.isGuestSignIn(object: ["type": "today"]))
         XCTAssertFalse(BridgeMessage.isGuestSignIn(object: "signIn"))
+        XCTAssertTrue(BridgeMessage.isOpenSettings(object: ["type": "settings"]))
+        XCTAssertFalse(BridgeMessage.isOpenSettings(object: ["type": "signIn"]))
+        XCTAssertFalse(BridgeMessage.isOpenSettings(object: ["settings": true]))
     }
 }

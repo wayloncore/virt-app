@@ -155,6 +155,21 @@ final class VirtUITests: XCTestCase {
         XCTAssertFalse(app.buttons["apple-sign-in"].exists, "the first screen is gone")
     }
 
+    /// You's "Account and app settings" row (the page's `settings` message) opens Virt's own settings sheet, where
+    /// sign out and Delete account are: one tap from inside the app, not only from the Home Screen icon's menu.
+    func testThePageOpensVirtsSettings() {
+        let token = "uitestfriendsession0123456789"
+        let app = launch(env: ["VIRT_TEST_HTML": Self.friendPage, "VIRT_FRIEND_TOKEN": token], args: ["-uitest-door-friend"])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), status(app))
+        web.buttons["Account and app settings"].tap()
+        XCTAssertTrue(app.staticTexts["signed-in-as"].waitForExistence(timeout: 8) || app.staticTexts["Signed in"].waitForExistence(timeout: 2),
+                      "Virt's settings sheet is up")
+        XCTAssertTrue(app.buttons["Delete account"].waitForExistence(timeout: 5), "Delete account is there, one tap from the page")
+        sleep(1)
+        shot("settings-from-page")
+    }
+
     /// A friend's phone (never used the studio): no studio sign-in anywhere on the first screen.
     func testAFriendsPhoneHasNoStudioDoor() {
         let app = launch(args: ["-uitest-door-none"])
@@ -584,6 +599,7 @@ final class VirtUITests: XCTestCase {
     <li>Romanian deadlift · 3 × 8–12</li><li>Plank · 3 × 30 s</li></ol>
     <p><button onclick="go()" style="font-size: 18px; padding: 10px 18px; border: 0; border-radius: 12px; background: #7a2232; color: #fff">Start rest</button>
     <button onclick="fin()" style="font-size: 18px; padding: 10px 18px">Finish</button></p>
+    <p><button onclick="post({ type: 'settings' })" style="font-size: 16px">Account and app settings</button></p>
     <p><button data-sign-out onclick="out()" style="font-size: 16px">Sign out here</button></p>
     <p id="session" style="font-size: 13px; color: #6b5a4a">session: none</p>
     <p id="has" style="font-size: 13px; color: #6b5a4a">handler: no</p>

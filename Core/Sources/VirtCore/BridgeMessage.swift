@@ -201,6 +201,13 @@ public enum BridgeMessage: Equatable, Sendable {
         return d["type"] as? String == "signIn"
     }
 
+    /// The page's "Account and app settings" row on You (website: docs/kinetic/bridge.md): `{ type: 'settings' }`.
+    /// Not an Engine message: the app opens its own settings sheet, where sign out and Delete account are.
+    public static func isOpenSettings(object: Any) -> Bool {
+        guard let d = object as? [String: Any] else { return false }
+        return d["type"] as? String == "settings"
+    }
+
     public static func decode(object: Any) -> BridgeMessage? {
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
