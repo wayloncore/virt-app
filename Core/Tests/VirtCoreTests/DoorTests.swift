@@ -188,4 +188,21 @@ final class DoorTests: XCTestCase {
         XCTAssertFalse(OwnerSignIn.codeOk("ab12"))
         XCTAssertFalse(OwnerSignIn.codeOk("AB1"))
     }
+
+    func testTheStudioSignInIsNeverOfferedOnceAppleOpenedHisTraining() {
+        XCTAssertTrue(Door.offersStudio(studioUsed: true, ownerOpened: false))
+        XCTAssertFalse(Door.offersStudio(studioUsed: true, ownerOpened: true))
+        XCTAssertFalse(Door.offersStudio(studioUsed: false, ownerOpened: false), "never on a friend's phone")
+    }
+
+    func testTylersPhoneNeverFallsIntoAFriendAccount() {
+        XCTAssertEqual(Door.ownerStep(owner: true, notLinked: false, studioUsed: false, ownerOpened: false), .open)
+        XCTAssertEqual(Door.ownerStep(owner: false, notLinked: true, studioUsed: true, ownerOpened: false), .link)
+        XCTAssertEqual(Door.ownerStep(owner: false, notLinked: true, studioUsed: false, ownerOpened: true), .link)
+        XCTAssertEqual(Door.ownerStep(owner: false, notLinked: false, studioUsed: true, ownerOpened: true), .sayUnreachable)
+        XCTAssertEqual(Door.ownerStep(owner: false, notLinked: true, studioUsed: false, ownerOpened: false), .goOnAsFriend, "a friend")
+        XCTAssertEqual(Door.ownerStep(owner: false, notLinked: false, studioUsed: false, ownerOpened: false), .goOnAsFriend)
+        XCTAssertEqual(Door.ownerStep(owner: false, notLinked: false, studioUsed: true, ownerOpened: false), .goOnAsFriend,
+                       "before he has linked, the owner path being off still lets the sign-in go on")
+    }
 }

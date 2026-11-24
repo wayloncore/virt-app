@@ -33,8 +33,15 @@ import WebKit
         set { UserDefaults.standard.set(newValue, forKey: Door.appleAskedKey) }
     }
 
+    /// Tyler's own Apple ID has opened his Training on this phone (Door.ownerOpenedKey).
+    static var ownerOpened: Bool {
+        get { UserDefaults.standard.bool(forKey: Door.ownerOpenedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Door.ownerOpenedKey) }
+    }
+
     /// For the test build's reset only.
     static func forget() {
+        UserDefaults.standard.removeObject(forKey: Door.ownerOpenedKey)
         UserDefaults.standard.removeObject(forKey: Door.appleAskedKey)
         UserDefaults.standard.removeObject(forKey: Door.key)
         UserDefaults.standard.removeObject(forKey: studioKey)
@@ -220,8 +227,10 @@ struct DoorsView: View {
     var opened: (Door) -> Void
     /// A note to show on the first step (a sign-in that ran out).
     var note: String?
-    /// This phone has used the studio's sign-in: offer it, small, as a fallback.
+    /// Offer the studio's sign-in, small: a phone that used it, until his Apple ID has opened his Training.
     var studioFallback = false
+    /// This phone has used the studio's sign-in (Tyler's): an unlinked Apple ID is asked to link, not made a friend.
+    var studioUsed = false
 
     /// Sign in with Apple is on the first screen, and nothing comes before or after it but a new person's name
     /// (Tyler, Nov 23: no age question). The first screen says Virt is for 13 and up, and signing in confirms it;
@@ -235,29 +244,77 @@ struct DoorsView: View {
     @State private var typedName = ""
 
     var body: some View {
+        Group {
+            if step == .welcome { first } else { steps }
+        }
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("doors")
+    }
+
+    /// The first screen (Tyler, Nov 23): the whole screen, pure black like the intro it comes from. His VIRT word
+    /// (the intro clip's own frame, so the pillar I is his artwork, never re-lettered), one line under it, and
+    /// Sign in with Apple at the bottom with the small print. Nothing else.
+    private var first: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 20)
+            Image("VirtWord").resizable().scaledToFit()
+                .frame(maxWidth: 440)
+                .accessibilityLabel("Virt")
+                .accessibilityIdentifier("virt-word")
+            Text("Strength is a virtue. Build it daily.")
+                .font(.title3.weight(.medium)).foregroundStyle(.white.opacity(0.82))
+                .multilineTextAlignment(.center)
+                .padding(.top, 14)
+                .accessibilityIdentifier("welcome-line")
+            Spacer(minLength: 20)
+            Spacer(minLength: 0)
+            VStack(spacing: 14) {
+                if let p = problem ?? note {
+                    Text(p).font(.footnote).foregroundStyle(Color.virtAccent).multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("doors-problem")
+                }
+                if busy { ProgressView().tint(.virtAccent).accessibilityIdentifier("doors-busy") }
+                appleButton
+                Text("For ages 13 and up. [Terms](https://train.time2play.live/terms) · [Privacy](https://train.time2play.live/privacy)")
+                    .font(.footnote).foregroundStyle(.white.opacity(0.55)).tint(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("first-small-print")
+                if studioFallback {
+                    Button("Use the studio sign-in") { opened(.tyler) }
+                        .font(.footnote).foregroundStyle(.white.opacity(0.45))
+                        .disabled(busy)
+                        .accessibilityIdentifier("door-tyler")
+                }
+            }
+            .frame(maxWidth: 420)
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// What can follow the first screen: a new person's name, or (Tyler's phone only) linking his studio.
+    private var steps: some View {
         ScrollView {
             VStack(spacing: 22) {
                 Image("VirtMark").resizable().scaledToFit().frame(width: 76, height: 76)
                     .padding(.top, 36)
                     .accessibilityHidden(true)
                 switch step {
-                case .welcome: welcome
+                case .welcome: EmptyView()
                 case .age: age
                 case .under13: under13
                 case .name: name
                 case .notLinked(let code): notLinked(code)
                 }
-                if let p = problem ?? (step == .welcome ? note : nil) {
+                if let p = problem {
                     Text(p).font(.footnote).foregroundStyle(Color.virtAccent).multilineTextAlignment(.center)
                         .accessibilityIdentifier("doors-problem")
                 }
                 if busy { ProgressView().tint(.virtAccent).accessibilityIdentifier("doors-busy") }
-                if studioFallback && step == .welcome {
-                    Button("Use the studio sign-in") { opened(.tyler) }
-                        .font(.footnote).foregroundStyle(.white.opacity(0.55))
-                        .disabled(busy)
-                        .accessibilityIdentifier("door-tyler")
-                }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 32)
@@ -265,38 +322,30 @@ struct DoorsView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .background(Color.virtBlack.ignoresSafeArea())
-        .preferredColorScheme(.dark)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("doors")
     }
 
-    private var welcome: some View {
-        StepCard(title: "Welcome to Virt", text: "Your plan and your workouts, with a rest timer on the Lock Screen. Only you see your training: no AI and no analytics.") {
-            SignInWithAppleButton(.signIn) { r in
-                r.requestedScopes = [.fullName]
-            } onCompletion: { result in
-                switch result {
-                case .success(let a):
-                    guard let c = a.credential as? ASAuthorizationAppleIDCredential,
-                          let t = c.identityToken.flatMap({ String(data: $0, encoding: .utf8) }) else {
-                        problem = "Couldn't sign in with Apple. Try again."
-                        return
-                    }
-                    typedName = c.fullName?.givenName ?? ""
-                    send(token: t, name: typedName, askOwner: true)
-                case .failure(let e):
-                    if (e as? ASAuthorizationError)?.code == .canceled { return }
+    private var appleButton: some View {
+        SignInWithAppleButton(.signIn) { r in
+            r.requestedScopes = [.fullName]
+        } onCompletion: { result in
+            switch result {
+            case .success(let a):
+                guard let c = a.credential as? ASAuthorizationAppleIDCredential,
+                      let t = c.identityToken.flatMap({ String(data: $0, encoding: .utf8) }) else {
                     problem = "Couldn't sign in with Apple. Try again."
+                    return
                 }
+                typedName = c.fullName?.givenName ?? ""
+                send(token: t, name: typedName, askOwner: true)
+            case .failure(let e):
+                if (e as? ASAuthorizationError)?.code == .canceled { return }
+                problem = "Couldn't sign in with Apple. Try again."
             }
-            .signInWithAppleButtonStyle(.white)
-            .frame(height: 50)
-            .disabled(busy)
-            .accessibilityIdentifier("apple-sign-in")
-            Text("For ages 13 and up. Signing in confirms you are. Virt asks Apple for your first name only, never your email.")
-                .font(.footnote).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
         }
+        .signInWithAppleButtonStyle(.white)
+        .frame(height: 52)
+        .disabled(busy)
+        .accessibilityIdentifier("apple-sign-in")
     }
 
     /// Asked after Sign in with Apple, and only when the server says this Apple ID has no account yet.
@@ -381,18 +430,30 @@ struct DoorsView: View {
         problem = nil
         Task {
             if askOwner {
-                switch await FriendAPI.ownerSignIn(identityToken: token) {
-                case .owner(let s):
-                    FriendKeeper.save(s)
+                let answer = await FriendAPI.ownerSignIn(identityToken: token)
+                var session: FriendSession?
+                var code: String?
+                if case .owner(let s) = answer { session = s }
+                if case .notLinked(let c) = answer { code = c }
+                switch Door.ownerStep(owner: session != nil, notLinked: code != nil, studioUsed: studioUsed,
+                                      ownerOpened: DoorStore.ownerOpened) {
+                case .open:
+                    if let session { FriendKeeper.save(session) }
+                    DoorStore.ownerOpened = true
                     busy = false
                     pendingToken = nil
                     return opened(.friend)
-                case .notLinked(let code) where studioFallback:
+                case .link:
                     busy = false
                     pendingToken = token
-                    step = .notLinked(code)
+                    step = .notLinked(code ?? "")
                     return
-                default:
+                case .sayUnreachable:
+                    // his phone, and his Training didn't answer: say so; never open a friend's account by accident
+                    busy = false
+                    problem = "Couldn't reach your Training just now. Check the connection and try again."
+                    return
+                case .goOnAsFriend:
                     break
                 }
             }

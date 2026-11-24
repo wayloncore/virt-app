@@ -28,6 +28,26 @@ public enum Door: String, Codable, Sendable, CaseIterable {
 
     /// Whether this phone has been shown Sign in with Apple in place of the studio's sign-in (UserDefaults; a new key).
     public static let appleAskedKey = "virt.apple-asked"
+    /// Set once Tyler's own Apple ID has opened his Training on this phone (an owner session). From then on the
+    /// first screen never offers the studio's sign-in, and a sign-in that can't reach his Training says so
+    /// instead of opening a friend's account. A new key.
+    public static let ownerOpenedKey = "virt.owner-apple"
+
+    /// The first screen's small "Use the studio sign-in": only on a phone that used the studio, and never once his
+    /// Apple ID has opened his Training (Tyler, Nov 23: that sign-in is his alone, and he's past it).
+    public static func offersStudio(studioUsed: Bool, ownerOpened: Bool) -> Bool { studioUsed && !ownerOpened }
+
+    /// What a first-screen sign-in does with the owner path's answer.
+    public enum OwnerStep: Equatable, Sendable { case open, link, sayUnreachable, goOnAsFriend }
+
+    /// Tyler's phone (it used the studio, or his Apple ID opened his Training before) never falls through to a
+    /// friend's account by accident: not linked asks him to link, and no answer says so. Anyone else goes on to
+    /// their own account.
+    public static func ownerStep(owner: Bool, notLinked: Bool, studioUsed: Bool, ownerOpened: Bool) -> OwnerStep {
+        if owner { return .open }
+        if notLinked { return studioUsed || ownerOpened ? .link : .goOnAsFriend }
+        return ownerOpened ? .sayUnreachable : .goOnAsFriend
+    }
 
     /// The door at launch once everyone signs in with Apple (#732). A phone still set to the studio's Cloudflare
     /// sign-in (Tyler's, from before Apple sign-in) is shown the first screen once, so his Apple ID opens his own

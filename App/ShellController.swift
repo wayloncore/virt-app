@@ -216,6 +216,9 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     func leaveDoor(note: String? = nil, signOutOnServer: Bool = true) {
         let was = door
         let session = friendSession
+        // his Apple ID opened his Training on this phone (builds before this one didn't note it): remember, so the
+        // first screen never offers the studio's sign-in again
+        if session?.owner == true { DoorStore.ownerOpened = true }
         door = nil
         friendSession = nil
         DoorStore.leave()
@@ -273,7 +276,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         let host = UIHostingController(rootView: DoorsView(opened: { [weak self] d in
             DoorStore.choose(d)
             self?.openDoor(d)
-        }, note: note, studioFallback: DoorStore.studioUsed))
+        }, note: note, studioFallback: Door.offersStudio(studioUsed: DoorStore.studioUsed, ownerOpened: DoorStore.ownerOpened),
+           studioUsed: DoorStore.studioUsed))
         host.view.backgroundColor = .virtBlack
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
@@ -357,8 +361,10 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         }
         let today = Engine.shared.today
         let host = UIHostingController(rootView: ReminderAskView(today: today) { [weak self] yes in
-            yes ? Reminders.shared.turnOn() : Reminders.shared.turnOff()
-            self?.dismiss(animated: true)
+            self?.dismiss(animated: true) {
+                // after the sheet is gone, so iOS's own question (or the way to Settings) has a clear screen
+                if yes { Reminders.shared.turnOn { [weak self] in Reminders.offerSettings(from: self) } } else { Reminders.shared.turnOff() }
+            }
         })
         host.view.backgroundColor = .virtBlack
         host.overrideUserInterfaceStyle = .dark
@@ -413,6 +419,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         }
         guard case .owner(let s) = outcome else { return "Your Training with Apple isn't on yet. Nothing changed; the studio sign-in still works." }
         FriendKeeper.save(s)
+        DoorStore.ownerOpened = true
         if presentedViewController != nil { dismiss(animated: true) }
         DoorStore.choose(.friend)
         openDoor(.friend)

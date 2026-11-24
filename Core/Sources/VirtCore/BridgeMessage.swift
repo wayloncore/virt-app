@@ -227,7 +227,8 @@ public enum BridgeMessage: Equatable, Sendable {
     private struct RawToday: Decodable {
         var date: String?, title: String?, kind: String?, usualTime: String?
         var done: Bool?
-        var minutes: Int?, weekDone: Int?, weekPlanned: Int?, streakWeeks: Int?
+        var minutes: Int?, weekDone: Int?, weekPlanned: Int?, streakWeeks: Int?, streak: Int?
+        var streakAtRisk: Bool?, streakAtRiskTomorrow: Bool?
         var trainingDays: [Int]?
 
         init() {}
@@ -242,7 +243,9 @@ public enum BridgeMessage: Equatable, Sendable {
             date = text(.date); title = text(.title); kind = text(.kind); usualTime = text(.usualTime)
             if let b = (try? c.decodeIfPresent(Bool.self, forKey: .done)) ?? nil { done = b } else { done = number(.done).map { $0 != 0 } }
             minutes = number(.minutes); weekDone = number(.weekDone); weekPlanned = number(.weekPlanned)
-            streakWeeks = number(.streakWeeks)
+            streakWeeks = number(.streakWeeks); streak = number(.streak)
+            streakAtRisk = (try? c.decodeIfPresent(Bool.self, forKey: .streakAtRisk)) ?? nil
+            streakAtRiskTomorrow = (try? c.decodeIfPresent(Bool.self, forKey: .streakAtRiskTomorrow)) ?? nil
             if let list = (try? c.decodeIfPresent([Double].self, forKey: .trainingDays)) ?? nil {
                 trainingDays = list.filter { $0.isFinite }.map { Int($0) }
             }
@@ -250,11 +253,13 @@ public enum BridgeMessage: Equatable, Sendable {
 
         enum Key: String, CodingKey {
             case date, title, kind, usualTime, done, minutes, weekDone, weekPlanned, streakWeeks, trainingDays
+            case streak, streakAtRisk, streakAtRiskTomorrow
         }
 
         var info: TodayInfo {
             TodayInfo(date: date, title: title, kind: kind, done: done, minutes: minutes, weekDone: weekDone,
-                      weekPlanned: weekPlanned, streakWeeks: streakWeeks, trainingDays: trainingDays, usualTime: usualTime)
+                      weekPlanned: weekPlanned, streakWeeks: streakWeeks, trainingDays: trainingDays, usualTime: usualTime,
+                      streak: streak, streakAtRisk: streakAtRisk, streakAtRiskTomorrow: streakAtRiskTomorrow)
         }
     }
 }
