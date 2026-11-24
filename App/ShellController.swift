@@ -154,11 +154,11 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     private func launchDoor(saved: String?, usedBefore: Bool) {
         let plain = Door.resolve(saved: saved, usedBefore: usedBefore)
-        let d = Door.atLaunch(saved: saved, usedBefore: usedBefore, appleAsked: DoorStore.appleAsked)
+        let d = Door.atLaunch(saved: saved, usedBefore: usedBefore, appleAsked: DoorStore.appleAsked, studioAllowed: testing)
         if plain == .tyler && d == nil {
             DoorStore.appleAsked = true
-            DoorStore.studioUsed = true  // the studio's sign-in stays on the first screen, small, as the fallback
-            return openDoor(nil, note: "Sign in with Apple to open your Training. No studio sign-in needed.")
+            DoorStore.studioUsed = true  // this is Tyler's phone: an unlinked Apple ID is asked to link, never made a friend
+            return openDoor(nil, note: "Sign in with Apple to open your Training.")
         }
         if saved == nil, d == .tyler { DoorStore.choose(.tyler) }
         openDoor(d)
@@ -276,8 +276,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         let host = UIHostingController(rootView: DoorsView(opened: { [weak self] d in
             DoorStore.choose(d)
             self?.openDoor(d)
-        }, note: note, studioFallback: Door.offersStudio(studioUsed: DoorStore.studioUsed, ownerOpened: DoorStore.ownerOpened),
-           studioUsed: DoorStore.studioUsed))
+        }, note: note, studioUsed: DoorStore.studioUsed))
         host.view.backgroundColor = .virtBlack
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)

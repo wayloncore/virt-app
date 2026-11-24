@@ -98,7 +98,7 @@ final class VirtUITests: XCTestCase {
     // MARK: - Training for friends (#578, part 2)
 
     /// A new phone (#732): one way in, Sign in with Apple on the first screen (a simulator can't finish
-    /// it). On a phone that has used the studio, its sign-in is offered small, and it opens inside the app as before.
+    /// it). The studio's sign-in is nowhere, even on a phone that used it.
     func testOneSignInFirst() {
         let app = launch(args: ["-uitest-door-none", "-uitest-studio-used"])
         let apple = app.buttons["apple-sign-in"]
@@ -110,22 +110,16 @@ final class VirtUITests: XCTestCase {
         sleep(1)
         shot("welcome")
 
-        let tyler = app.buttons["door-tyler"]
-        XCTAssertTrue(tyler.waitForExistence(timeout: 5), "the studio's sign-in, on a phone that used it")
-        tyler.tap()
-        XCTAssertTrue(waitStatus(app, contains: "door tyler", 10), status(app))
-        let reached = waitStatus(app, contains: "cloudflareaccess.com", 40) || waitStatus(app, contains: "host studio.tyleralocke.com", 5)
-        XCTAssertTrue(reached, "the studio's sign-in opens inside the app: \(status(app))")
-        XCTAssertEqual(app.state, .runningForeground, "nothing was sent to Safari")
+        XCTAssertFalse(app.buttons["door-tyler"].exists, "the studio's sign-in is gone from Virt, even on a phone that used it")
     }
 
-    /// Tyler's phone from before Apple sign-in (still set to the studio's door): the first screen, once, with the
-    /// studio's sign-in small underneath. It never opens Cloudflare by itself. The next launch keeps his choice.
+    /// Tyler's phone from before Apple sign-in (still set to the studio's door): the first screen, and nothing about
+    /// the studio. It never opens Cloudflare by itself.
     func testAStudioPhoneIsOfferedAppleOnce() {
         let app = launch(args: ["-uitest-apple-not-asked"])
         XCTAssertTrue(app.staticTexts["welcome-line"].waitForExistence(timeout: 15), "the first screen, not the studio's sign-in")
         XCTAssertTrue(app.buttons["apple-sign-in"].exists || app.buttons["Sign in with Apple"].exists, "Sign in with Apple, right there")
-        XCTAssertTrue(app.buttons["door-tyler"].exists, "the studio's sign-in is still there, small")
+        XCTAssertFalse(app.buttons["door-tyler"].exists, "no studio sign-in anywhere")
         XCTAssertFalse(status(app).contains("cloudflareaccess.com"), status(app))
         sleep(1)
         shot("apple-once")

@@ -57,11 +57,6 @@ struct SettingsView: View {
                         .disabled(account.midWorkout || deleting)
                         .accessibilityIdentifier("owner-apple")
                     }
-                    if account.owner {
-                        Button("Use the studio sign-in") { account.studio() }
-                            .disabled(account.midWorkout || deleting)
-                            .accessibilityIdentifier("owner-studio")
-                    }
                     Button(account.owner ? "Sign out" : "Switch sign-in") { confirmLeave = true }
                         .disabled(account.midWorkout || deleting)
                         .accessibilityIdentifier("switch-sign-in")
@@ -177,7 +172,7 @@ extension SettingsView {
         if account.midWorkout { return "Finish the workout first, then you can switch." }
         if deleting { return account.door == .tyler ? "Signing in with Apple…" : "Deleting…" }
         if let n = deleteNote { return n }
-        if account.owner { return "Your own Training, signed in with Apple. Only your Apple ID opens it; the studio's email sign-in is the backup." }
+        if account.owner { return "Your own Training, signed in with Apple. Only your Apple ID opens it." }
         return account.door == .friend
             ? "Signed in with Apple to your Time2Play account. Only you see your training: no AI and no analytics."
             : "Studio Training, signed in with the studio's email code. Sign in with Apple to use your Apple ID instead: Virt links it to your Training for you."

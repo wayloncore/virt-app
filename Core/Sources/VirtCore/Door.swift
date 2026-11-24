@@ -33,10 +33,6 @@ public enum Door: String, Codable, Sendable, CaseIterable {
     /// instead of opening a friend's account. A new key.
     public static let ownerOpenedKey = "virt.owner-apple"
 
-    /// The first screen's small "Use the studio sign-in": only on a phone that used the studio, and never once his
-    /// Apple ID has opened his Training (Tyler, Nov 23: that sign-in is his alone, and he's past it).
-    public static func offersStudio(studioUsed: Bool, ownerOpened: Bool) -> Bool { studioUsed && !ownerOpened }
-
     /// What a first-screen sign-in does with the owner path's answer.
     public enum OwnerStep: Equatable, Sendable { case open, link, sayUnreachable, goOnAsFriend }
 
@@ -49,13 +45,13 @@ public enum Door: String, Codable, Sendable, CaseIterable {
         return ownerOpened ? .sayUnreachable : .goOnAsFriend
     }
 
-    /// The door at launch once everyone signs in with Apple (#732). A phone still set to the studio's Cloudflare
-    /// sign-in (Tyler's, from before Apple sign-in) is shown the first screen once, so his Apple ID opens his own
-    /// Training with no Cloudflare login. After that one time the saved choice stands: if he picks the studio's
-    /// sign-in there, it's remembered and never asked again.
-    public static func atLaunch(saved: String?, usedBefore: Bool, appleAsked: Bool) -> Door? {
+    /// The door at launch. Everyone signs in with Apple, Tyler included (Nov 23: the studio's Cloudflare sign-in is
+    /// gone from Virt altogether). A phone still set to it gets the first screen, every time, until Apple has signed
+    /// it in. Only the test build still opens the studio's door (`studioAllowed`: its stand-in pages run there, and
+    /// there it is offered Apple once, as before).
+    public static func atLaunch(saved: String?, usedBefore: Bool, appleAsked: Bool, studioAllowed: Bool = false) -> Door? {
         let d = resolve(saved: saved, usedBefore: usedBefore)
-        return d == .tyler && !appleAsked ? nil : d
+        return d == .tyler && (!studioAllowed || !appleAsked) ? nil : d
     }
 
     /// Where Training starts for this door.
