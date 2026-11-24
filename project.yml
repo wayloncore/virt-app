@@ -75,6 +75,9 @@ targets:
           - appleid.apple.com
           - github.com
           - train.time2play.live
+          # a scheme, not a domain (the colon says so to WebKit): Training's screens served from inside the app at
+          # virt-app://train/ (tyleralocke#822). With it the list is at iOS's limit of ten.
+          - "virt-app:"
         # touch and hold the Virt icon
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: com.tyleralocke.virt.start
