@@ -229,6 +229,10 @@ struct DoorsView: View {
     var note: String?
     /// This phone has used the studio's sign-in (Tyler's): an unlinked Apple ID is asked to link, not made a friend.
     var studioUsed = false
+    /// The second way in, under Sign in with Apple: try a workout with no account ("Back to the workout" when a
+    /// guest came here from the page's own Sign in). nil hides it.
+    var tryLabel = "Try a workout"
+    var tryIt: (() -> Void)?
 
     /// Sign in with Apple is on the first screen, and nothing comes before or after it but a new person's name
     /// (Tyler, Nov 23: no age question). The first screen says Virt is for 13 and up, and signing in confirms it;
@@ -276,6 +280,15 @@ struct DoorsView: View {
                 }
                 if busy { ProgressView().tint(.virtAccent).accessibilityIdentifier("doors-busy") }
                 appleButton
+                if let tryIt {
+                    Button(action: tryIt) {
+                        Text(tryLabel).font(.system(size: 19, weight: .medium)).frame(maxWidth: .infinity).frame(height: 52)
+                    }
+                    .foregroundStyle(.white)
+                    .background(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.35), lineWidth: 1))
+                    .disabled(busy)
+                    .accessibilityIdentifier("try-workout")
+                }
                 Text("For ages 13 and up. [Terms](https://train.time2play.live/terms) · [Privacy](https://train.time2play.live/privacy)")
                     .font(.footnote).foregroundStyle(.white.opacity(0.55)).tint(.white.opacity(0.8))
                     .multilineTextAlignment(.center)

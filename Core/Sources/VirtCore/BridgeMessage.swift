@@ -194,6 +194,13 @@ public enum BridgeMessage: Equatable, Sendable {
     }
 
     /// Reads a message as WebKit hands it over (a dictionary of plain values).
+    /// A guest's "Sign in with Apple" on the try-a-workout page (#806): `{ type: 'signIn', from: 'guest' }`. Not an
+    /// Engine message: the app shows its own first screen.
+    public static func isGuestSignIn(object: Any) -> Bool {
+        guard let d = object as? [String: Any] else { return false }
+        return d["type"] as? String == "signIn"
+    }
+
     public static func decode(object: Any) -> BridgeMessage? {
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }

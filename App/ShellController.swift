@@ -27,7 +27,11 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     /// The web view is bound to the app's domains (always, but for the test build's made-up offline page).
     private var bound = true
     /// Where Training starts for this door.
-    private var startURL: URL { startOverride ?? door?.home ?? Navigation.home }
+    /// Trying a workout with no account (the first screen's second button): the friends' door with no session, on
+    /// the website's /try page. Never saved: the next launch shows the first screen again, and the page keeps the
+    /// guest's workout on the phone.
+    private var guest = false
+    private var startURL: URL { startOverride ?? (guest ? Navigation.guestHome : door?.home) ?? Navigation.home }
     private let testing: Bool
     private var statusLine: UILabel?
     /// The saved copy has been tried once for the page that failed (OfflinePolicy).
@@ -166,6 +170,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     /// Opens Training through a door, or the first screen (nil).
     private func openDoor(_ d: Door?, note: String? = nil) {
+        guest = false
         friendSession = nil
         if d == .friend {
             guard let s = FriendKeeper.load(), s.usable(now: Date()) else {
@@ -183,6 +188,24 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         loadStart()
         if d == .friend { checkFriend() }
         updateStatusLine()
+    }
+
+    /// "Try a workout": the guest page, with no sign-in and nothing handed over.
+    private func openGuest() {
+        friendSession = nil
+        guest = true
+        door = .friend
+        installScripts()
+        hideDoors()
+        loadStart()
+        updateStatusLine()
+    }
+
+    /// The guest page's "Sign in with Apple" (its `signIn` message): Virt's own first screen, over the workout,
+    /// with the way back to it. Signing in opens their Training, where the page keeps the workout they just did.
+    func guestWantsSignIn() {
+        guard guest, doorsHost == nil else { return }
+        showDoors(note: "Sign in to keep your workout, your plan and your history.")
     }
 
     /// The scripts each page gets before its own run: Virt's start hint, and on a friend's door the session handed
@@ -276,7 +299,11 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         let host = UIHostingController(rootView: DoorsView(opened: { [weak self] d in
             DoorStore.choose(d)
             self?.openDoor(d)
-        }, note: note, studioUsed: DoorStore.studioUsed))
+        }, note: note, studioUsed: DoorStore.studioUsed, tryLabel: guest ? "Back to the workout" : "Try a workout",
+           tryIt: { [weak self] in
+               guard let self else { return }
+               if self.guest { self.hideDoors(); self.updateStatusLine() } else { self.openGuest() }
+           }))
         host.view.backgroundColor = .virtBlack
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
@@ -340,6 +367,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         guard let door else { return }  // the first screen is up: nothing to open yet
         if errorHost != nil { return retry() }
         if testHTML != nil { return }
+        if guest { return }  // a guest's page is the whole of it: nothing to go back to
         if Navigation.todayAction(current: web.url, midWorkout: midWorkout, door: door) == .loadHome {
             Engine.shared.pageLoading()
             web.load(URLRequest(url: door.home))
@@ -771,7 +799,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         l.superview?.isHidden = doorsHost != nil
         let host = web?.url?.host ?? "none"
         l.text = Engine.shared.status + " · host \(host)" + (errorHost != nil ? " · offline screen" : "") + " · error \(lastError)"
-            + " · door \(door?.rawValue ?? (doorsHost != nil ? "asking" : "none"))"
+            + " · door \(door?.rawValue ?? (doorsHost != nil ? "asking" : "none"))\(guest ? " guest" : "")"
         view.bringSubviewToFront(l.superview ?? l)
     }
 }
@@ -780,8 +808,12 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 /// controller alive.
 final class BridgeHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let m = BridgeMessage.decode(object: message.body) else { return }
         let main = message.frameInfo.isMainFrame
+        if main, BridgeMessage.isGuestSignIn(object: message.body), message.frameInfo.securityOrigin.host == Navigation.friendHost {
+            Task { @MainActor in (Engine.shared.page as? ShellController)?.guestWantsSignIn() }
+            return
+        }
+        guard let m = BridgeMessage.decode(object: message.body) else { return }
         Task { @MainActor in
             Engine.shared.receive(m)
             if main, let shell = Engine.shared.page as? ShellController { shell.pagePosted() }
