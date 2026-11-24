@@ -62,9 +62,10 @@ The first screen on a new phone (`App/Account.swift`, `DoorsView`) asks which wa
   The page's "Sign out here" posts to Virt's own `virtAccount` handler, and Virt signs out too.
 - The first screen (Tyler, Nov 23): pure black, his VIRT word (`VirtWord`, cropped from the launch clip's own frame, so
   the pillar I is his artwork; never re-letter it), "Strength is a virtue. Build it daily.", Sign in with Apple at the
-  bottom, and "For ages 13 and up. Terms · Privacy". Once his Apple ID has opened his Training on a phone
-  (`virt.owner-apple`), the studio's sign-in is never offered there again, and a sign-in that can't reach his
-  Training says so instead of opening a friend's account (`Door.offersStudio`, `Door.ownerStep`).
+  bottom, and "For ages 13 and up. Terms · Privacy". **The studio's Cloudflare sign-in is gone from Virt
+  (Tyler, Nov 23): one sign-in screen for everyone.** Only the test build still opens that door, for its stand-in
+  pages (`Door.atLaunch`, `studioAllowed`). On Tyler's phone a sign-in that can't reach his Training says so, and an
+  unlinked Apple ID is asked to link in the studio on the web, never made a friend's account (`Door.ownerStep`).
 - The streak's morning nudge: `today` may carry `streak`, `streakAtRisk` and `streakAtRiskTomorrow` (website #804);
   with reminders on, Virt sets one plain notification at 9:00 on such a day (`ReminderPlan.streakPlan`). "Remind me"
   asks iOS for alerts, and if iOS has them off for Virt, offers the way to Settings.

@@ -221,14 +221,12 @@ enum FriendAPI {
 
 /// The first screen on a new phone (and after signing out): one way in, Sign in with Apple. The server decides whose
 /// Training it is: Tyler's linked Apple ID opens his own (an owner session), anyone else their own Time2Play account.
-/// The studio's Cloudflare sign-in shows only on a phone that has used it (`studioFallback`), never on a friend's.
+/// The studio's Cloudflare sign-in is gone from Virt (Tyler, Nov 23); only the test build still opens that door.
 struct DoorsView: View {
     /// Signed in: `.friend` (an owner or friend session is in FriendKeeper), or `.tyler` (the studio's sign-in).
     var opened: (Door) -> Void
     /// A note to show on the first step (a sign-in that ran out).
     var note: String?
-    /// Offer the studio's sign-in, small: a phone that used it, until his Apple ID has opened his Training.
-    var studioFallback = false
     /// This phone has used the studio's sign-in (Tyler's): an unlinked Apple ID is asked to link, not made a friend.
     var studioUsed = false
 
@@ -282,12 +280,6 @@ struct DoorsView: View {
                     .font(.footnote).foregroundStyle(.white.opacity(0.55)).tint(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("first-small-print")
-                if studioFallback {
-                    Button("Use the studio sign-in") { opened(.tyler) }
-                        .font(.footnote).foregroundStyle(.white.opacity(0.45))
-                        .disabled(busy)
-                        .accessibilityIdentifier("door-tyler")
-                }
             }
             .frame(maxWidth: 420)
         }
@@ -393,22 +385,28 @@ struct DoorsView: View {
         }
     }
 
-    /// Only on Tyler's phone (one that used the studio): an Apple ID that isn't linked to his studio Training yet.
-    /// It's never turned into a Time2Play account without asking.
+    /// Only on Tyler's phone: an Apple ID that isn't linked to his Training yet. It's never turned into a Time2Play
+    /// account without asking. He links it once in the studio on the web (the studio's sign-in is no longer in Virt).
     private func notLinked(_ code: String) -> some View {
-        StepCard(title: "Link your studio first",
-                 text: "This Apple ID isn't linked to your studio Training yet. Open the studio sign-in, then Virt's Settings, Sign in with Apple: Virt links it for you. Or link it by hand in the studio: Training, Profile, code \(code).") {
-            Button { opened(.tyler) } label: {
-                Text("Open the studio sign-in").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+        StepCard(title: "Link your Apple ID first",
+                 text: "This Apple ID isn't linked to your Training yet. In the studio on the web, open Training, You, Settings, Sign in from Virt, and enter the code \(code). Then come back and try again.") {
+            Button {
+                guard let t = pendingToken else { step = .welcome; return }
+                send(token: t, name: typedName, askOwner: true)
+            } label: {
+                Text("Try again").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent).tint(.virtAccent).foregroundStyle(Color.virtBlack)
-            .accessibilityIdentifier("open-studio")
+            .disabled(busy)
+            .accessibilityIdentifier("link-retry")
             Button {
                 guard let t = pendingToken else { step = .welcome; return }
                 send(token: t, name: typedName, askOwner: false)
             } label: { Text("Use a Time2Play account instead").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6) }
                 .buttonStyle(.bordered).tint(.virtAccent)
+                .disabled(busy)
                 .accessibilityIdentifier("as-friend")
+            back
         }
     }
 
