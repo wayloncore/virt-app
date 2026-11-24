@@ -108,6 +108,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidBecomeActive(_ scene: UIScene) {
         lock.didBecomeActive()
         Engine.shared.becameActive()
+        // a newer set of Training's screens, if there is one (at most every 30 minutes, never during a workout);
+        // it's used from the next launch
+        BundleStore.shared.checkForUpdate(midWorkout: Engine.shared.board.midWorkout(now: Date()))
     }
 
     func sceneWillResignActive(_ scene: UIScene) { lock.willResignActive() }
@@ -115,6 +118,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidEnterBackground(_ scene: UIScene) {
         lock.didEnterBackground()
         shell?.saveSignIn()
+        shell?.cancelStartWatch()
     }
 }
 

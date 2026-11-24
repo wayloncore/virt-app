@@ -389,4 +389,22 @@ final class TrainBundleTests: XCTestCase {
         XCTAssertTrue(start.contains("if (location.protocol === 'virt-app:') app.bundled = true;"))
         XCTAssertTrue(start.contains("window.kineticApp = Object.freeze(app)"))
     }
+
+    // MARK: - Moving from the old way
+
+    func testTheMoveFromTheOldWay() {
+        XCTAssertEqual(BundleMove.step(done: true, hasSession: true, online: true), .go)
+        XCTAssertEqual(BundleMove.step(done: false, hasSession: false, online: true), .doneAndGo, "no one signed in: nothing to move")
+        XCTAssertEqual(BundleMove.step(done: false, hasSession: false, online: false), .doneAndGo)
+        XCTAssertEqual(BundleMove.step(done: false, hasSession: true, online: true), .run)
+        XCTAssertEqual(BundleMove.step(done: false, hasSession: true, online: false), .later, "no signal: bundled now, the old page on a later launch")
+
+        XCTAssertTrue(BundleMove.after(loaded: true, waiting: false, tries: 0) == (true, 0), "sent, or nothing to send")
+        XCTAssertTrue(BundleMove.after(loaded: false, waiting: true, tries: 0) == (false, 0), "never loaded: not a try")
+        XCTAssertTrue(BundleMove.after(loaded: true, waiting: true, tries: 0) == (false, 1))
+        XCTAssertTrue(BundleMove.after(loaded: true, waiting: true, tries: 1) == (false, 2))
+        XCTAssertTrue(BundleMove.after(loaded: true, waiting: true, tries: 2) == (true, 3), "it stops trying")
+        XCTAssertTrue(BundleMove.waitingScript.contains("studio.gym.queue"))
+        XCTAssertNotEqual(BundleMove.doneKey, BundleMove.triesKey)
+    }
 }

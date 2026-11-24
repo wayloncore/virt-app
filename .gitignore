@@ -7,3 +7,6 @@ DerivedData/
 xcuserdata/
 .DS_Store
 __pycache__/
+# Training's screens, downloaded at build time (scripts/fetch_bundle.py); only the empty folder is kept
+/App/Bundle/*
+!/App/Bundle/.gitkeep

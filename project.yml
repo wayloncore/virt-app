@@ -21,7 +21,14 @@ targets:
     platform: iOS
     sources:
       - path: App
-        excludes: ["Sounds/LICENSES.md"]
+        excludes: ["Sounds/LICENSES.md", "Bundle"]
+      # Training's screens, embedded as they are (tyleralocke#822): a folder reference, so the files keep their
+      # paths. scripts/fetch_bundle.py fills it before the project is generated; with only its .gitkeep there is no
+      # bundle, and the app loads the website as before.
+      - path: App/Bundle
+        type: folder
+        buildPhase: resources
+        optional: true
       - Shared
     dependencies:
       - package: VirtCore

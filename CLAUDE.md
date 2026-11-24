@@ -38,6 +38,7 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
 - The web view is bound to the studio's domains (Info.plist `WKAppBoundDomains`, the same list as
   `Navigation.appBoundDomains`), which is what lets Training's service worker run in the app. A main-frame page outside
   them opens in Safari.
+- `App/Bundle/`: Training's screens for the build to embed (filled by `scripts/fetch_bundle.py`; see the bundle below).
 - `UITests/`: run in the iPhone simulator. `project.yml`: the XcodeGen spec (the project file isn't kept).
 - `.github/workflows/mac.yml`: the batched Mac run (VirtCore tests, build, UI tests, screenshots printed into the log).
   `core.yml`: VirtCore's tests on Linux on every push that changes `Core/` (free, about a minute).
@@ -80,6 +81,33 @@ The first screen on a new phone (`App/Account.swift`, `DoorsView`) asks which wa
   out of either door clears the widgets' `today`, the reminders, any timer, and that door's sign-in on the phone.
 - The server checks the Apple token's audience; it has to accept `com.tyleralocke.virt` as well as Time2Play's
   bundle id (a website issue), and the friend's page is a 404 until Tyler approves the `training-friends` switch.
+
+## Training's screens inside the app (the bundle, tyleralocke#822)
+The plan and the contract with the website are wayloncore/tyleralocke#822. The rules are VirtCore's
+`TrainBundle.swift` (tested on Linux); the app's side is `App/BundleStore.swift`, `BundleScheme.swift` and
+`BundleMove.swift`.
+- **Where it comes from:** the website's build lists every file its four pages need in
+  `https://train.time2play.live/app/manifest.json` (sizes and SHA-256s). `scripts/fetch_bundle.py` runs in
+  testflight.yml and mac.yml before the project is generated, checks every file, and fills `App/Bundle/`
+  (`manifest.json` and `files/<path>`; only its `.gitkeep` is in git), which the app embeds as a folder. A 404 for
+  the manifest means no bundle; a wrong hash fails the TestFlight build.
+- **When it's used:** only when the build shipped with a bundle. Then the friends' door, the owner's session and a
+  guest load `virt-app://train/` (a `WKURLSchemeHandler`; `"virt-app:"` in `WKAppBoundDomains` makes the scheme
+  app-bound, the list's tenth and last entry) instead of the website, the page is told `kineticApp.bundled` and
+  `window.T2P_API_BASE`, and its API calls go to https://train.time2play.live with the session as a Bearer token.
+  **With no shipped bundle, Virt loads the website exactly as before and never downloads one.**
+- **Updates:** on launch and when the app comes forward (at most every 30 minutes, never during a workout)
+  `BundleStore` asks for the manifest, fetches only the files it doesn't have (https, that host only, no cookies),
+  checks every hash, and keeps the version in Application Support/Bundles/<version>/. It's used from the next
+  launch, never swapped under a running page. The newest, the one before and the shipped copy are kept.
+- **The fallback:** a version that has never posted a `kinetic` message gets 8 seconds from the start of its first
+  load; if it stays silent it's marked failed (never tried again by this build) and Training reloads from the one
+  before, then the shipped copy, then the website. A new app build starts from its own shipped copy.
+- **Moving from the old way:** a phone signed in before bundles loads the old page once, hidden, for up to 10
+  seconds so it can send a workout it had saved (`virt.bundle-moved` in UserDefaults; with no signal, a later launch).
+- **Testing:** `cd Core && swift test` covers the rules. The UI tests never read the embedded bundle or the network:
+  `-uitest-bundle` makes a three-file bundle in the test build (`BundleFixture`), and without it there is no bundle,
+  so every older test runs the website path. The status line shows `page <address>` and `bundle <version>`.
 
 ## The bridge (the website owns it)
 The contract is the website's `docs/kinetic/bridge.md` (`src/lib/training/kinetic.js`). The page posts to the

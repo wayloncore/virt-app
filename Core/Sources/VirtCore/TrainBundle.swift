@@ -365,3 +365,50 @@ public enum PageStart {
         (() => { try { if (\(Navigation.bundledCheck)) window.T2P_API_BASE = 'https://\(Navigation.friendHost)'; } catch (e) {} })();
         """
 }
+
+/// Moving from the old way (tyleralocke#822). A phone that used a build before bundles may have a workout saved on
+/// the phone and not yet sent, in train.time2play.live's own storage, which the bundled page (another origin) can't
+/// see. So the first launch in bundled mode with a signal loads the old page once, hidden, with the session handed
+/// over, and gives it up to 10 seconds to send what's waiting; then Virt is on the bundle for good.
+public enum BundleMove {
+    /// UserDefaults: the move is done (or there was nothing to move). A new key.
+    public static let doneKey = "virt.bundle-moved"
+    /// UserDefaults: how many times the old page was given its 10 seconds and still had something waiting. A new key.
+    public static let triesKey = "virt.bundle-move-tries"
+    /// After this many tries with something still waiting, Virt stops trying (it would never send).
+    public static let maxTries = 3
+
+    public enum Step: Equatable, Sendable {
+        /// Nothing to do: open Training from the bundle.
+        case go
+        /// Nothing to move (no one was signed in): note it's done, and go.
+        case doneAndGo
+        /// Load the old page, hidden, first.
+        case run
+        /// No signal: go on from the bundle now, and try the hidden load on a later launch.
+        case later
+    }
+
+    public static func step(done: Bool, hasSession: Bool, online: Bool) -> Step {
+        if done { return .go }
+        if !hasSession { return .doneAndGo }
+        return online ? .run : .later
+    }
+
+    /// After the hidden load: whether the move is done, and the tries so far. A page that never loaded (the signal
+    /// dropped) doesn't count as a try. One that loaded with nothing left waiting is done; one that still has
+    /// something waiting gets another go on a later launch, `maxTries` in all.
+    public static func after(loaded: Bool, waiting: Bool, tries: Int) -> (done: Bool, tries: Int) {
+        guard loaded else { return (false, tries) }
+        if !waiting { return (true, tries) }
+        return (tries + 1 >= maxTries, tries + 1)
+    }
+
+    /// Run on the old page: true while a finished workout is still waiting to be sent (Training's offline queue;
+    /// the key is the website's src/lib/health/client-local.js). If it can't tell, it says true, so the page gets
+    /// its full time.
+    public static let waitingScript = """
+        (() => { try { const q = JSON.parse(localStorage.getItem('studio.gym.queue') || '[]');
+          return Array.isArray(q) && q.length > 0; } catch (e) { return true; } })()
+        """
+}
