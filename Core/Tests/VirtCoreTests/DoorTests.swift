@@ -143,7 +143,11 @@ final class DoorTests: XCTestCase {
             if t.hasPrefix("WKAppBoundDomains:") { inside = true; continue }
             guard inside else { continue }
             if t.hasPrefix("#") { continue }
-            if t.hasPrefix("- ") { list.append(String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces)); continue }
+            if t.hasPrefix("- ") {
+                // the scheme entry is quoted in the YAML (its colon would make it a key otherwise)
+                list.append(String(t.dropFirst(2)).trimmingCharacters(in: CharacterSet(charactersIn: " \"")))
+                continue
+            }
             break
         }
         XCTAssertEqual(list, Navigation.appBoundDomains)

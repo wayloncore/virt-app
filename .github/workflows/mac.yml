@@ -35,6 +35,15 @@ jobs:
           t=$(date +%s); set -o pipefail
           cd Core && swift test 2>&1 | grep -E "error:|failed|Executed|passed|XCTAssert" | tail -30
           echo "core_s=$(( $(date +%s) - t ))" >> "$GITHUB_ENV"
+      - name: Training's screens for the app to embed (none until the website side is live)
+        run: |
+          # The UI tests use their own tiny bundle (-uitest-bundle) and never read this one, so a problem on the
+          # site only warns here. The TestFlight build is the strict one.
+          python3 scripts/fetch_bundle.py || {
+            echo "::warning::fetch_bundle.py failed; this run builds with no embedded bundle"
+            find App/Bundle -mindepth 1 ! -name .gitkeep -delete
+          }
+          echo "BUNDLE-FILES $(find App/Bundle -type f ! -name .gitkeep | wc -l | tr -d ' ')"
       - name: Generate the Xcode project
         run: brew install xcodegen >/dev/null && xcodegen generate
       - name: Pick and boot an iPhone simulator (one with a Dynamic Island)

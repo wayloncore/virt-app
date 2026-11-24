@@ -31,7 +31,19 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     /// the website's /try page. Never saved: the next launch shows the first screen again, and the page keeps the
     /// guest's workout on the phone.
     private var guest = false
-    private var startURL: URL { startOverride ?? (guest ? Navigation.guestHome : door?.home) ?? Navigation.home }
+    private var startURL: URL {
+        if let o = startOverride { return o }
+        if bundled { return guest ? Navigation.bundledGuestHome : Navigation.bundledHome }
+        return (guest ? Navigation.guestHome : door?.home) ?? Navigation.home
+    }
+    /// Bundled mode (tyleralocke#822): Training's screens are served from inside the app (BundleStore has a usable
+    /// version) at virt-app://train/, for the friends' door, the owner's session and a guest. Otherwise everything
+    /// here is exactly as before bundles: the website.
+    private var bundled: Bool { bound && startOverride == nil && door == .friend && BundleStore.shared.bundled }
+    /// The 8-second watch on a bundle version that has never started before (BundleCheck.startSeconds).
+    private var startWatch: DispatchWorkItem?
+    /// The one-time hidden load of the old page (BundleMove.swift), while it runs.
+    private var mover: OldPageMove?
     private let testing: Bool
     private var statusLine: UILabel?
     /// The saved copy has been tried once for the page that failed (OfflinePolicy).
@@ -91,6 +103,10 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         }
         // bound to the studio's domains (Info.plist WKAppBoundDomains): that's what lets Training's service worker
         // run in the app, so it keeps working with no signal. Other sites already open in Safari (Navigation).
+        // The bundle's own scheme, virt-app: (Info.plist lists it in WKAppBoundDomains as "virt-app:", which is how
+        // WebKit takes a scheme as app-bound), so virt-app://train/ loads in this same bound web view, with the
+        // bridge and the scripts below, and its fetch() calls go to https://train.time2play.live with CORS.
+        config.setURLSchemeHandler(BundleSchemeHandler(), forURLScheme: Navigation.bundleScheme)
         config.limitsNavigationsToAppBoundDomains = bound
 
         web = WKWebView(frame: .zero, configuration: config)
@@ -137,7 +153,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         guard let door else { return }
         triedCache = false  // a fresh start: nothing left over from the door before
         firstError = nil
-        if let html = testHTML {
+        if let html = testHTML, !bundled {
             let base = door == .friend ? Navigation.friendHome : URL(string: "https://studio.tyleralocke.com/virt-bridge-test")!
             web.loadHTMLString(html, baseURL: base)
         } else {
@@ -150,6 +166,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     /// At launch: the saved door, or the first screen. A phone still on the studio's Cloudflare sign-in (Tyler's, from
     /// before Apple sign-in) gets the first screen once, so his Apple ID opens his Training (Door.atLaunch, #732).
     private func pickDoor() {
+        // bundled, and no one signed in on this phone: there's nothing in the old page's storage to move (BundleMove)
+        if BundleStore.shared.bundled, !OldPageMove.done, FriendKeeper.load() == nil { OldPageMove.done = true }
         if let saved = DoorStore.saved { return launchDoor(saved: saved, usedBefore: true) }
         DoorStore.usedBefore(cookies: web.configuration.websiteDataStore.httpCookieStore) { [weak self] used in
             self?.launchDoor(saved: nil, usedBefore: used)
@@ -185,9 +203,31 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         installScripts()
         guard d != nil else { return showDoors(note: note) }
         hideDoors()
-        loadStart()
+        startTraining()
         if d == .friend { checkFriend() }
         updateStatusLine()
+    }
+
+    /// Opens Training. In bundled mode, on a phone that was signed in before bundles, the old page is first loaded
+    /// once where nobody sees it, to send a workout it may have saved on the phone (BundleMove); with no signal
+    /// that waits for a later launch, and Training opens from the bundle now.
+    private func startTraining() {
+        guard bundled, !guest, !testing, let s = friendSession else { return loadStart() }
+        switch BundleMove.step(done: OldPageMove.done, hasSession: true, online: BundleStore.shared.online) {
+        case .go, .later:
+            loadStart()
+        case .doneAndGo:
+            OldPageMove.done = true
+            loadStart()
+        case .run:
+            let move = OldPageMove()
+            mover = move
+            move.run(session: s, behind: view) { [weak self] in
+                guard let self else { return }
+                self.mover = nil
+                if self.door == .friend, self.friendSession == s { self.loadStart() }
+            }
+        }
     }
 
     /// "Try a workout": the guest page, with no sign-in and nothing handed over.
@@ -214,10 +254,13 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         guard bound else { return }
         let ucc = web.configuration.userContentController
         ucc.removeAllUserScripts()
-        ucc.addUserScript(WKUserScript(source: Self.startScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        if door == .friend, let s = friendSession, let handover = FriendSignIn.handoverScript(token: s.token) {
+        ucc.addUserScript(WKUserScript(source: PageStart.script(build: BundleStore.shared.build), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        let bundled = self.bundled
+        // bundled: the page is told where its API is, and the session goes to the bundle's own page as well
+        if bundled { ucc.addUserScript(WKUserScript(source: PageStart.apiBaseScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)) }
+        if door == .friend, let s = friendSession, let handover = FriendSignIn.handoverScript(token: s.token, bundled: bundled) {
             ucc.addUserScript(WKUserScript(source: handover, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-            ucc.addUserScript(WKUserScript(source: FriendSignIn.signOutWatchScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+            ucc.addUserScript(WKUserScript(source: FriendSignIn.signOutWatch(bundled: bundled), injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
     }
 
@@ -242,6 +285,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         // his Apple ID opened his Training on this phone (builds before this one didn't note it): remember, so the
         // first screen never offers the studio's sign-in again
         if session?.owner == true { DoorStore.ownerOpened = true }
+        let wasBundled = bundled
+        cancelStartWatch()
         door = nil
         friendSession = nil
         DoorStore.leave()
@@ -255,9 +300,16 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             FriendKeeper.clear()
             if signOutOnServer, let s = session { Task { await FriendAPI.signOut(s) } }
             let all = WKWebsiteDataStore.allWebsiteDataTypes()
+            // bundled: the page's data is kept under the bundle's own origin, whatever WebKit calls that record, so
+            // everything goes but the studio's (which a friend's door never opens anyway)
+            let studio = ["tyleralocke.com", "cloudflareaccess.com"]
             data.fetchDataRecords(ofTypes: all) { records in
-                data.removeData(ofTypes: all, for: records.filter { $0.displayName.hasSuffix("time2play.live") }) {}
+                data.removeData(ofTypes: all, for: records.filter { r in
+                    r.displayName.hasSuffix("time2play.live") || (wasBundled && !studio.contains { r.displayName.hasSuffix($0) })
+                }) {}
             }
+            // and the page clears its own, in case the record goes by a name we didn't expect
+            if wasBundled, Navigation.isBundled(web.url) { web.evaluateJavaScript(Self.forgetScript) { _, _ in } }
         case .tyler?:
             CookieKeeper.signOut(of: data.httpCookieStore) {}
         case nil:
@@ -266,6 +318,13 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         web.load(URLRequest(url: URL(string: "about:blank")!))
         showDoors(note: note)
     }
+
+    /// Run on the bundled page as someone signs out: everything the page kept on this phone goes.
+    private static let forgetScript = """
+        (() => { try { localStorage.clear(); sessionStorage.clear();
+          if (indexedDB.databases) indexedDB.databases().then((l) => l.forEach((d) => indexedDB.deleteDatabase(d.name)));
+          if (window.caches) caches.keys().then((k) => k.forEach((n) => caches.delete(n))); } catch (e) {} return true; })()
+        """
 
     /// The friend tapped the page's own "Sign out here".
     func pageSignedOut() {
@@ -327,16 +386,6 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         doorsHost = nil
     }
 
-    /// Runs before the page's own scripts: tells Training that Virt plays the lead-in, zero, set and finish sounds
-    /// itself (so the page can skip its own; an additive hint the page may ignore), and asks WebKit to mix the page's
-    /// own sounds with his music.
-    private static let startScript = """
-        (() => {
-          try { window.kineticApp = Object.freeze({ app: 'virt', version: 2, sounds: ['lead-in', 'zero', 'set', 'finish'], settings: true }); } catch (e) {}
-          try { if (navigator.audioSession && navigator.audioSession.type === 'auto') navigator.audioSession.type = 'ambient'; } catch (e) {}
-        })();
-        """
-
     /// Saves the sign-in when the app goes to the background (SceneDelegate).
     func saveSignIn() {
         CookieKeeper.save(from: web.configuration.websiteDataStore.httpCookieStore)
@@ -358,9 +407,9 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     private var onTraining: Bool {
         guard let door else { return false }
         if testHTML != nil {
-            return door == .friend ? Navigation.isTraining(web.url, door: .friend) : (web.url?.path.hasPrefix("/virt-bridge-test") ?? false)
+            return door == .friend ? Navigation.isTraining(web.url, door: .friend, bundled: bundled) : (web.url?.path.hasPrefix("/virt-bridge-test") ?? false)
         }
-        return Navigation.isTraining(web.url, door: door)
+        return Navigation.isTraining(web.url, door: door, bundled: bundled)
     }
 
     func goToToday(midWorkout: Bool) {
@@ -368,15 +417,70 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         if errorHost != nil { return retry() }
         if testHTML != nil { return }
         if guest { return }  // a guest's page is the whole of it: nothing to go back to
-        if Navigation.todayAction(current: web.url, midWorkout: midWorkout, door: door) == .loadHome {
+        if Navigation.todayAction(current: web.url, midWorkout: midWorkout, door: door, bundled: bundled) == .loadHome {
             Engine.shared.pageLoading()
-            web.load(URLRequest(url: door.home))
+            web.load(URLRequest(url: bundled ? Navigation.bundledHome : door.home))
         }
     }
 
     /// The page posted a message: it's up and listening.
     func pagePosted() {
+        bridgeSpoke()
         if onTraining { Engine.shared.pageReady() }
+    }
+
+    // MARK: - The bundle's first start (tyleralocke#822)
+
+    /// The page said something on the `kinetic` bridge. From the bundled page, that's the proof this version of
+    /// the bundle works: the watch is called off, and the version isn't watched again.
+    func bridgeSpoke() {
+        guard bundled, Navigation.isBundled(web.url) else { return }
+        cancelStartWatch()
+        BundleStore.shared.proved()
+    }
+
+    /// A version of the bundle that has never spoken on the bridge gets 8 seconds from the moment Training starts
+    /// to load. (A version that has is trusted: a slow phone never fails a bundle that works.)
+    private func watchStart(of url: URL?) {
+        cancelStartWatch()
+        guard bundled, BundleStore.shared.needsWatch, Navigation.isTraining(url, door: .friend, bundled: true) else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.bundleDidNotStart()
+        }
+        startWatch = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + BundleCheck.startSeconds, execute: work)
+    }
+
+    /// Called off when the app leaves the screen (a page in the background is paused, which proves nothing), and
+    /// whenever another load takes over.
+    func cancelStartWatch() {
+        startWatch?.cancel()
+        startWatch = nil
+    }
+
+    /// No bridge message in time: this version is never tried again, and Training reloads from the one before it,
+    /// then the shipped copy, then the website.
+    private func bundleDidNotStart() {
+        startWatch = nil
+        guard bundled, UIApplication.shared.applicationState != .background else { return }
+        BundleStore.shared.failActive()
+        leaveBrokenBundle()
+    }
+
+    /// The web view wouldn't open the bundle's page at all: no bundle for the rest of this launch (the website, as
+    /// before), without holding it against any version.
+    private func bundleWouldNotLoad() {
+        cancelStartWatch()
+        BundleStore.shared.giveUp()
+        leaveBrokenBundle()
+    }
+
+    private func leaveBrokenBundle() {
+        installScripts()  // the scripts say whether the page is bundled
+        web.stopLoading()
+        loadStart()
+        updateStatusLine()
     }
 
     // MARK: - Virt's own sheets
@@ -571,6 +675,9 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         lastError = "\(e.domain) \(e.code)"
         let failing = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL
         if e.domain == WKError.errorDomain, e.code == WKError.Code.navigationAppBoundDomain.rawValue {
+            // the bundle's own page was refused as not app-bound (it shouldn't be: "virt-app:" is in the list): the
+            // website instead, never a dead end
+            if bundled, failing == nil || Navigation.isBundled(failing) { return bundleWouldNotLoad() }
             // a page outside the studio's domains: Safari, not a dead end
             if let u = failing { UIApplication.shared.open(u) }
             return
@@ -629,7 +736,12 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if action.shouldPerformDownload { return decisionHandler(.download) }
         let main = action.targetFrame?.isMainFrame ?? true
-        var choice = Navigation.choose(action.request.url, mainFrame: main, door: door ?? .tyler)
+        // bundled: a link to one of the site's pages that the bundle has (Privacy, Terms) opens from the bundle
+        if bundled, main, let page = bundledPage(for: action.request.url) {
+            webView.load(URLRequest(url: page))
+            return decisionHandler(.cancel)
+        }
+        var choice = Navigation.choose(action.request.url, mainFrame: main, door: door ?? .tyler, bundled: bundled)
         #if DEBUG
         if choice == .openOutside, action.request.url?.host == startURL.host { choice = .load }  // the tests' start page
         #endif
@@ -656,6 +768,12 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         readyWork?.cancel()
         Engine.shared.pageLoading()
+        watchStart(of: webView.url)
+    }
+
+    private func bundledPage(for url: URL?) -> URL? {
+        guard let manifest = BundleStore.shared.active?.manifest else { return nil }
+        return Navigation.bundledPage(for: url, isPage: { manifest.isPage($0) })
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -728,7 +846,13 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url {
-            if Navigation.choose(url, mainFrame: true, door: door ?? .tyler) == .load { webView.load(action.request) } else { UIApplication.shared.open(url) }
+            if bundled, let page = bundledPage(for: url) {
+                webView.load(URLRequest(url: page))
+            } else if Navigation.choose(url, mainFrame: true, door: door ?? .tyler, bundled: bundled) == .load {
+                webView.load(action.request)
+            } else {
+                UIApplication.shared.open(url)
+            }
         }
         return nil
     }
@@ -806,6 +930,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         let host = web?.url?.host ?? "none"
         l.text = Engine.shared.status + " · host \(host)" + (errorHost != nil ? " · offline screen" : "") + " · error \(lastError)"
             + " · door \(door?.rawValue ?? (doorsHost != nil ? "asking" : "none"))\(guest ? " guest" : "")"
+            + " · page \(String((web?.url?.absoluteString ?? "none").prefix(48)))"
+            + " · bundle \(BundleStore.shared.active?.version ?? "none")\(BundleStore.shared.note)"
         view.bringSubviewToFront(l.superview ?? l)
     }
 }
@@ -815,13 +941,18 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 final class BridgeHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         let main = message.frameInfo.isMainFrame
-        if main, BridgeMessage.isGuestSignIn(object: message.body), message.frameInfo.securityOrigin.host == Navigation.friendHost {
+        // Training's own page: train.time2play.live, or in bundled mode the bundle's origin (virt-app://train)
+        let origin = message.frameInfo.securityOrigin
+        let friend = Navigation.isFriendOrigin(scheme: origin.protocol, host: origin.host, bundled: BundleMode.on)
+        // any message from the page's main frame, even one Virt doesn't read, says the page is up (the bundle's start watch)
+        if main { Task { @MainActor in (Engine.shared.page as? ShellController)?.bridgeSpoke() } }
+        if main, BridgeMessage.isGuestSignIn(object: message.body), friend {
             Task { @MainActor in (Engine.shared.page as? ShellController)?.guestWantsSignIn() }
             return
         }
         // You's "Account and app settings" row: Virt's own settings sheet (sign out, Delete account), one tap from
         // inside the app. Only from Training's own pages, and never for a guest (there's no account to manage).
-        if main, BridgeMessage.isOpenSettings(object: message.body), [Navigation.friendHost, "studio.tyleralocke.com"].contains(message.frameInfo.securityOrigin.host) {
+        if main, BridgeMessage.isOpenSettings(object: message.body), friend || origin.host == "studio.tyleralocke.com" {
             Task { @MainActor in (Engine.shared.page as? ShellController)?.settingsFromPage() }
             return
         }
@@ -834,12 +965,13 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
 }
 
 /// Virt's own messages from a friend's page (not the website's `kinetic` bridge): only "signedOut", only from
-/// train.time2play.live's main frame. A separate object, so WebKit's strong hold on it doesn't keep the controller alive.
+/// train.time2play.live's main frame (in bundled mode, the bundle's own page too). A separate object, so WebKit's strong hold on it doesn't keep the controller alive.
 final class AccountHandler: NSObject, WKScriptMessageHandler {
     weak var shell: ShellController?
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == Navigation.friendHost,
+        let origin = message.frameInfo.securityOrigin
+        guard message.frameInfo.isMainFrame, Navigation.isFriendOrigin(scheme: origin.protocol, host: origin.host, bundled: BundleMode.on),
               (message.body as? [String: Any])?["type"] as? String == "signedOut" else { return }
         Task { @MainActor in self.shell?.pageSignedOut() }
     }

@@ -203,6 +203,90 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["welcome-line"].waitForExistence(timeout: 10), "signed out: the first screen")
     }
 
+    // MARK: - Training's screens inside the app (tyleralocke#822)
+
+    /// Bundled mode (`-uitest-bundle`: the test build makes a tiny bundle of its own, with this stand-in page as its
+    /// front page): Training loads from virt-app://train/ with no network, its script comes from the bundle with the
+    /// right type, a file that isn't in the manifest is a 404, the session is handed over, the page is told it's
+    /// bundled and where its API is, the kinetic bridge works both ways, and the page's own "Sign out here" signs
+    /// Virt out too.
+    func testBundledTrainingLoadsFromInsideTheApp() {
+        let token = "uitestfriendsession0123456789"
+        let app = launch(env: ["VIRT_TEST_HTML": Self.bundledPage, "VIRT_FRIEND_TOKEN": token], args: ["-uitest-door-friend", "-uitest-bundle"])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), "the kinetic bridge on the bundled page: \(status(app))")
+        XCTAssertTrue(waitStatus(app, contains: "page virt-app://train/"), status(app))
+        XCTAssertTrue(status(app).contains("bundle fixture-1"), status(app))
+        XCTAssertTrue(status(app).contains("door friend"), status(app))
+        XCTAssertTrue(web.staticTexts["origin: virt-app://train"].exists, "the page's own address")
+        XCTAssertTrue(web.staticTexts["session: handed over"].exists, "the session, before the page's scripts")
+        XCTAssertTrue(web.staticTexts["app: bundled, build ok"].exists, "window.kineticApp says bundled and the build number")
+        XCTAssertTrue(web.staticTexts["api: https://train.time2play.live"].exists, "window.T2P_API_BASE")
+        XCTAssertTrue(web.staticTexts["script: loaded"].waitForExistence(timeout: 10), "a script file from the bundle ran")
+        XCTAssertTrue(web.staticTexts["missing: 404"].waitForExistence(timeout: 10), "a path that isn't in the manifest is a 404")
+        sleep(1)
+        shot("bundled-today")
+
+        web.buttons["Start rest"].tap()
+        allowAlerts()
+        XCTAssertTrue(waitStatus(app, contains: "timer rest:"), status(app))
+        XCTAssertTrue(status(app).contains("alerts 1"), "the alert at zero: \(status(app))")
+        XCTAssertTrue(status(app).contains("workout Full body A"), status(app))
+        app.buttons["dbg-add15"].tap()
+        XCTAssertTrue(web.staticTexts["command: add15"].waitForExistence(timeout: 10), "a lock-screen button reaches the bundled page")
+        web.buttons["Finish"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "timer none"), status(app))
+
+        // 9 seconds on, the bundle is still the one in use: its first message called the start watch off
+        sleep(9)
+        XCTAssertTrue(status(app).contains("bundle fixture-1"), status(app))
+        XCTAssertFalse(status(app).contains("failed"), status(app))
+
+        web.buttons["Sign out here"].tap()
+        XCTAssertTrue(app.staticTexts["welcome-line"].waitForExistence(timeout: 10), "signed out from the bundled page: the first screen")
+    }
+
+    /// A guest in bundled mode: "Try a workout" opens virt-app://train/try with no session. A link to the site's
+    /// Privacy page opens the bundle's own copy, and a link to anywhere else goes to Safari, never inside.
+    func testBundledGuestPrivacyAndOutsideLinks() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.bundledPage], args: ["-uitest-door-none", "-uitest-bundle"])
+        let tryIt = app.buttons["try-workout"]
+        XCTAssertTrue(tryIt.waitForExistence(timeout: 15), "Try a workout, on the first screen")
+        tryIt.tap()
+        XCTAssertTrue(waitStatus(app, contains: "door friend guest", 15), status(app))
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), "the bridge works for a bundled guest: \(status(app))")
+        XCTAssertTrue(status(app).contains("page virt-app://train/try"), status(app))
+        XCTAssertTrue(web.staticTexts["session: none"].exists, "no session: a guest has no account")
+        XCTAssertTrue(web.staticTexts["app: bundled, build ok"].exists)
+
+        web.links["Privacy"].tap()
+        XCTAssertTrue(web.staticTexts["privacy: from the bundle"].waitForExistence(timeout: 10), "the site's Privacy link opens the bundle's page: \(status(app))")
+        XCTAssertTrue(waitStatus(app, contains: "page virt-app://train/privacy", 5), status(app))
+        XCTAssertEqual(app.state, .runningForeground, "nothing was sent to Safari")
+        sleep(1)
+        shot("bundled-privacy")
+
+        web.links["Outside"].tap()
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 30), "an outside link opens in Safari")
+        app.activate()
+        XCTAssertTrue(waitStatus(app, contains: "page virt-app://train/privacy", 15), "and never loaded inside: \(status(app))")
+    }
+
+    /// A bundle whose page never speaks on the bridge (a broken version): after 8 seconds Virt marks it failed and
+    /// goes back; with nothing older here, that's the website, as before bundles.
+    func testABundleThatDoesNotStartFallsBack() {
+        let token = "uitestfriendsession0123456789"
+        let app = launch(env: ["VIRT_TEST_HTML": Self.friendPage, "VIRT_FRIEND_TOKEN": token], args: ["-uitest-door-friend", "-uitest-bundle"])
+        XCTAssertTrue(waitStatus(app, contains: "bundle none (failed fixture-1)", 30), "the silent bundle was given up on: \(status(app))")
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), status(app))
+        XCTAssertTrue(waitStatus(app, contains: "page https://train.time2play.live/"), "the website, as before: \(status(app))")
+        XCTAssertTrue(web.staticTexts["session: handed over"].exists, "and the session still reaches it")
+        XCTAssertFalse(status(app).contains("offline screen"), status(app))
+    }
+
     /// With no way to reach the studio: the plain offline screen, and Retry.
     func testOfflineScreenAndRetry() {
         let app = launch(env: ["VIRT_START_URL": "https://virt-offline-check.invalid/"])
@@ -587,6 +671,55 @@ final class VirtUITests: XCTestCase {
     /// Stands in for train.time2play.live's Today (the friends' Training): its paper look, the session the app hands
     /// over (window.T2P_SESSION, read once and deleted, as the page's client.js does), the kinetic bridge, and the
     /// page's own "Sign out here" (data-sign-out).
+    /// The stand-in for Training's page inside the bundle (`-uitest-bundle` serves it at virt-app://train/ and
+    /// /try). It says what it was given, loads a script from the bundle, asks for a file that isn't there, and
+    /// posts a first bridge message as it opens, as Training does.
+    static let bundledPage = """
+    <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#15171b"></head>
+    <body style="font: 17px -apple-system; margin: 0; padding: 20px 18px; background: #15171b; color: #f2f2f2">
+    <h1 style="font: 700 30px -apple-system; margin: 6px 0 12px">Full body A</h1>
+    <p><button onclick="go()" style="font-size: 18px; padding: 10px 18px; border: 0; border-radius: 12px; background: #ff4b3a; color: #fff">Start rest</button>
+    <button onclick="fin()" style="font-size: 18px; padding: 10px 18px">Finish</button></p>
+    <p><button data-sign-out onclick="out()" style="font-size: 16px">Sign out here</button></p>
+    <p><a href="https://train.time2play.live/privacy" style="color: #dfc297; font-size: 18px">Privacy</a></p>
+    <p id="origin" style="font-size: 13px">origin: ?</p>
+    <p id="session" style="font-size: 13px">session: none</p>
+    <p id="has" style="font-size: 13px">handler: no</p>
+    <p id="app" style="font-size: 13px">app: ?</p>
+    <p id="api" style="font-size: 13px">api: none</p>
+    <p id="script" style="font-size: 13px">script: no</p>
+    <p id="missing" style="font-size: 13px">missing: ?</p>
+    <p id="cmd" style="font-size: 13px">command: none</p>
+    <script>
+    const t = window.T2P_SESSION;
+    try { delete window.T2P_SESSION; } catch (e) {}
+    document.getElementById('origin').textContent = 'origin: ' + location.origin;
+    document.getElementById('session').textContent = typeof t === 'string' && /^[A-Za-z0-9]{16,200}$/.test(t) ? 'session: handed over' : 'session: none';
+    const k = window.kineticApp || {};
+    document.getElementById('app').textContent = 'app: ' + (k.bundled === true ? 'bundled' : 'not bundled') + ', build ' + (typeof k.build === 'number' && k.build >= 0 ? 'ok' : 'missing');
+    document.getElementById('api').textContent = 'api: ' + (window.T2P_API_BASE || 'none');
+    const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kinetic;
+    document.getElementById('has').textContent = h ? 'handler: yes' : 'handler: no';
+    const post = (m) => h && h.postMessage(m);
+    post({ type: 'set.next', next: null });
+    let start = 0, end = 0;
+    const startMsg = () => ({ type: 'timer.start', id: 'rest:' + start, kind: 'rest', label: 'Rest', endsAt: end, startedAt: start });
+    function go() { start = Date.now(); end = start + 90000; post({ type: 'workout.start', title: 'Full body A' }); post(startMsg()); }
+    function fin() { post({ type: 'timer.cancel', id: 'rest:' + start }); post({ type: 'workout.finish', summary: { mins: 1, exercises: 1, sets: 1, steps: 0 } }); }
+    function out() { document.getElementById('session').textContent = 'signed out'; }
+    addEventListener('kinetic:command', (e) => {
+      const c = typeof e.detail === 'string' ? e.detail : e.detail && e.detail.command;
+      document.getElementById('cmd').textContent = 'command: ' + c;
+      if (c === 'add15') { end += 15000; post(startMsg()); }
+    });
+    fetch('/_train/immutable/not-in-the-manifest.js').then((r) => { document.getElementById('missing').textContent = 'missing: ' + r.status; },
+      () => { document.getElementById('missing').textContent = 'missing: failed'; });
+    </script>
+    <script src="/_train/immutable/app.js"></script>
+    </body></html>
+    """
+
     static let friendPage = """
     <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#f4ede1"></head>

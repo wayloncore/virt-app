@@ -131,6 +131,10 @@ jobs:
             done
           done
           echo "KEYCHAIN=$KC" >> "$GITHUB_ENV"
+      - name: Training's screens, embedded in the app (every size and hash checked)
+        # No manifest on the site yet (a 404): no bundle, and the app loads the website as before. A manifest with a
+        # missing file or a wrong hash fails the build here.
+        run: python3 scripts/fetch_bundle.py
       - name: Generate the Xcode project
         run: brew install xcodegen >/dev/null && xcodegen generate
       - name: Archive (signed)

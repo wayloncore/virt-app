@@ -174,10 +174,14 @@ public enum FriendSignIn {
     /// Runs at the start of each train.time2play.live page: hands the page the session the way its client.js reads it
     /// (`window.T2P_SESSION`, never in the address). The page swaps it once for its own cookie and deletes it. Only on
     /// that host, so no other page ever sees it; nil for a token that isn't letters and digits.
-    public static func handoverScript(token: String) -> String? {
+    /// In bundled mode (tyleralocke#822) it's also handed to the bundle's own page, virt-app://train, which keeps it
+    /// in memory and sends it as `Authorization: Bearer`; still no other page.
+    public static func handoverScript(token: String, bundled: Bool = false) -> String? {
         guard tokenOk(token) else { return nil }
+        let site = "location.protocol === 'https:' && location.hostname === '\(Navigation.friendHost)'"
+        let test = bundled ? "(\(site)) || (\(Navigation.bundledCheck))" : site
         return """
-            (() => { try { if (location.protocol === 'https:' && location.hostname === '\(Navigation.friendHost)') \
+            (() => { try { if (\(test)) \
             window.T2P_SESSION = '\(token)'; } catch (e) {} })();
             """
     }
@@ -185,14 +189,22 @@ public enum FriendSignIn {
     /// Runs on train.time2play.live pages: tells Virt when the friend taps the page's own "Sign out here", so Virt
     /// signs out too (and doesn't hand the page its session again on the next load). Posts to Virt's own `virtAccount`
     /// handler, not the page's `kinetic` bridge.
-    public static let signOutWatchScript = """
-        (() => { try { if (location.hostname !== '\(Navigation.friendHost)') return;
+    public static let signOutWatchScript = signOutWatch(bundled: false)
+
+    /// The same watch; in bundled mode it runs on the bundle's own page too.
+    public static func signOutWatch(bundled: Bool) -> String {
+        let away = bundled
+            ? "location.hostname !== '\(Navigation.friendHost)' && !(\(Navigation.bundledCheck))"
+            : "location.hostname !== '\(Navigation.friendHost)'"
+        return """
+        (() => { try { if (\(away)) return;
           document.addEventListener('click', (e) => {
             const t = e.target && e.target.closest ? e.target.closest('[data-sign-out]') : null;
             if (t && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.virtAccount)
               window.webkit.messageHandlers.virtAccount.postMessage({ type: 'signedOut' });
           }, true); } catch (e) {} })();
         """
+    }
 
     /// What a friend types as their name: trimmed, 2 to 24 characters.
     public static func cleanName(_ s: String) -> String? {
