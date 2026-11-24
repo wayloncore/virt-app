@@ -332,7 +332,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     /// own sounds with his music.
     private static let startScript = """
         (() => {
-          try { window.kineticApp = Object.freeze({ app: 'virt', version: 2, sounds: ['lead-in', 'zero', 'set', 'finish'] }); } catch (e) {}
+          try { window.kineticApp = Object.freeze({ app: 'virt', version: 2, sounds: ['lead-in', 'zero', 'set', 'finish'], settings: true }); } catch (e) {}
           try { if (navigator.audioSession && navigator.audioSession.type === 'auto') navigator.audioSession.type = 'ambient'; } catch (e) {}
         })();
         """
@@ -398,6 +398,12 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         host.sheetPresentationController?.detents = [.medium()]
         host.sheetPresentationController?.prefersGrabberVisible = true
         present(host, animated: true)
+    }
+
+    /// The page asked for Virt's settings (its Account row).
+    func settingsFromPage() {
+        guard door != nil, !guest, doorsHost == nil, presentedViewController == nil else { return }
+        showSettings()
     }
 
     func showSettings() {
@@ -811,6 +817,12 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
         let main = message.frameInfo.isMainFrame
         if main, BridgeMessage.isGuestSignIn(object: message.body), message.frameInfo.securityOrigin.host == Navigation.friendHost {
             Task { @MainActor in (Engine.shared.page as? ShellController)?.guestWantsSignIn() }
+            return
+        }
+        // You's "Account and app settings" row: Virt's own settings sheet (sign out, Delete account), one tap from
+        // inside the app. Only from Training's own pages, and never for a guest (there's no account to manage).
+        if main, BridgeMessage.isOpenSettings(object: message.body), [Navigation.friendHost, "studio.tyleralocke.com"].contains(message.frameInfo.securityOrigin.host) {
+            Task { @MainActor in (Engine.shared.page as? ShellController)?.settingsFromPage() }
             return
         }
         guard let m = BridgeMessage.decode(object: message.body) else { return }

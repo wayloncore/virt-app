@@ -70,6 +70,9 @@ The first screen on a new phone (`App/Account.swift`, `DoorsView`) asks which wa
   train.time2play.live/try on the friends' door with no session (`guest`, never saved). The page's own Sign in with
   Apple sends `{ type: 'signIn' }` on the bridge, and Virt shows its first screen over the workout, with "Back to the
   workout". Signing in opens their Training, where the page keeps the workout they just did.
+- Virt's settings from the page: Virt sets `kineticApp.settings: true`, and the page's "Account and app settings" row on
+  You sends `{ type: 'settings' }` on the bridge; Virt opens its settings sheet (sign out, Delete account), so account
+  deletion is one tap from inside the app. Never for a guest.
 - The streak's morning nudge: `today` may carry `streak`, `streakAtRisk` and `streakAtRiskTomorrow` (website #804);
   with reminders on, Virt sets one plain notification at 9:00 on such a day (`ReminderPlan.streakPlan`). "Remind me"
   asks iOS for alerts, and if iOS has them off for Virt, offers the way to Settings.
