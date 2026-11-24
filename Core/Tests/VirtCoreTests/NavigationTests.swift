@@ -35,4 +35,13 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(Navigation.isSignIn(URL(string: "https://proud-unit-177a.cloudflareaccess.com/")))
         XCTAssertEqual(Navigation.home.absoluteString, "https://studio.tyleralocke.com/training")
     }
+
+    func testTheGuestPageIsTrainingOnTheFriendsDoor() {
+        XCTAssertEqual(Navigation.guestHome.absoluteString, "https://train.time2play.live/try")
+        XCTAssertTrue(Navigation.isTraining(Navigation.guestHome, door: .friend))
+        XCTAssertFalse(Navigation.isTraining(URL(string: "https://train.time2play.live/privacy"), door: .friend))
+        XCTAssertTrue(BridgeMessage.isGuestSignIn(object: ["type": "signIn", "from": "guest"]))
+        XCTAssertFalse(BridgeMessage.isGuestSignIn(object: ["type": "today"]))
+        XCTAssertFalse(BridgeMessage.isGuestSignIn(object: "signIn"))
+    }
 }

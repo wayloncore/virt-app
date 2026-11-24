@@ -138,6 +138,23 @@ final class VirtUITests: XCTestCase {
         shot("first-screen")
     }
 
+    /// The second way in: "Try a workout" under Sign in with Apple opens the guest page with no sign-in and no
+    /// session handed over (the stand-in page says which). Nothing is saved, so the next launch asks again.
+    func testTryAWorkoutOpensWithNoAccount() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.friendPage], args: ["-uitest-door-none"])
+        let tryIt = app.buttons["try-workout"]
+        XCTAssertTrue(tryIt.waitForExistence(timeout: 15), "Try a workout, on the first screen")
+        XCTAssertEqual(tryIt.label, "Try a workout")
+        sleep(1)
+        shot("first-screen-try")
+        tryIt.tap()
+        XCTAssertTrue(waitStatus(app, contains: "door friend guest", 15), status(app))
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), "the bridge works for a guest: \(status(app))")
+        XCTAssertFalse(web.staticTexts["session: handed over"].exists, "no session: a guest has no account")
+        XCTAssertFalse(app.buttons["apple-sign-in"].exists, "the first screen is gone")
+    }
+
     /// A friend's phone (never used the studio): no studio sign-in anywhere on the first screen.
     func testAFriendsPhoneHasNoStudioDoor() {
         let app = launch(args: ["-uitest-door-none"])

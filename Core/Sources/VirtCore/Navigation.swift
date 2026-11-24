@@ -16,6 +16,9 @@ public enum Navigation {
     /// Training for friends (#578): the website's own Training screens on the friend's data.
     public static let friendHost = "train.time2play.live"
     public static let friendHome = URL(string: "https://\(friendHost)/")!
+    /// Try a workout with no account (the website's #806, behind its `training-guest` switch).
+    public static let guestPath = "/try"
+    public static let guestHome = URL(string: "https://\(friendHost)\(guestPath)")!
 
     public enum Choice: Equatable, Sendable { case load, openOutside, block }
 
@@ -48,7 +51,7 @@ public enum Navigation {
     /// page on train.time2play.live (its front page, not the privacy page).
     public static func isTraining(_ url: URL?, door: Door = .tyler) -> Bool {
         guard let url, let host = url.host?.lowercased() else { return false }
-        if door == .friend { return host == friendHost && (url.path == "/" || url.path.isEmpty) }
+        if door == .friend { return host == friendHost && (url.path == "/" || url.path.isEmpty || url.path == guestPath) }
         return host == "studio.tyleralocke.com" && (url.path == "/training" || url.path.hasPrefix("/training/"))
     }
 
