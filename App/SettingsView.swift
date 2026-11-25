@@ -76,7 +76,7 @@ struct SettingsView: View {
                     Picker("Lock after", selection: $lockAfter) {
                         ForEach(LockAfter.allCases, id: \.self) { Text($0.name).tag($0) }
                     }
-                    .onChange(of: lockAfter) { _, l in AppLock.setLockAfter(l) }
+                    .onChange(of: lockAfter) { _, l in PrefsHub.shared.setLockAfter(l) }
                     .accessibilityIdentifier("lock-after")
                 } header: {
                     Text("Face ID")
@@ -88,7 +88,7 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Sounds", isOn: $soundsOn)
-                        .onChange(of: soundsOn) { _, on in SoundBoard.shared.enabled = on }
+                        .onChange(of: soundsOn) { _, on in PrefsHub.shared.setSounds(on) }
                         .accessibilityIdentifier("sounds-toggle")
                     Picker("Style", selection: $style) {
                         ForEach(SoundStyle.allCases, id: \.self) { s in
@@ -101,20 +101,16 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.inline)
                     .disabled(!soundsOn)
-                    .onChange(of: style) { _, s in
-                        SoundBoard.shared.style = s
-                        SoundBoard.shared.preview(s)
-                        Engine.shared.soundStyleChanged()
-                    }
+                    .onChange(of: style) { _, s in PrefsHub.shared.setStyle(s, preview: true) }
                 } header: {
                     Text("Sounds")
                 } footer: {
-                    Text("A green light when a rest ends (three short tones, then go on the zero), a falling bell when work ends, a click when a set is logged, and a short finish. They mix with your music and follow the silent switch. With the phone locked the same sound comes with a quiet alert, even with Sounds off; Virt clears it once you're back. Change those in iOS Settings, Notifications, Virt.")
+                    Text("A green light when a rest ends (three short tones, then go on the zero), a falling bell when work ends, a click when a set is logged, and a short finish. They mix with your music and follow the silent switch. With the phone locked the same sound comes with a quiet alert, which Virt clears once you're back. With Sounds off, Virt makes no sound at all, on the Lock Screen too.")
                 }
 
                 Section {
                     Toggle("Training-day reminders", isOn: $remindersOn)
-                        .onChange(of: remindersOn) { _, on in on ? Reminders.shared.turnOn { Reminders.offerSettings(from: Reminders.topController()) } : Reminders.shared.turnOff() }
+                        .onChange(of: remindersOn) { _, on in PrefsHub.shared.setRemindersFromSheet(on) }
                         .accessibilityIdentifier("reminders-toggle")
                     if alertsDenied {
                         Button("Turn on notifications for Virt") {
@@ -154,15 +150,13 @@ struct SettingsView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", action: done).accessibilityIdentifier("settings-done") } }
         }
         .tint(.virtAccent)
-        .alert("Switch sign-in?", isPresented: $confirmLeave) {
+        .alert(AccountCopy.signOutTitle, isPresented: $confirmLeave) {
             Button("Sign out", role: .destructive) { account.leave() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(account.door == .friend
-                 ? "You're signed out on this phone and Virt goes back to its first screen. Your training stays in your account."
-                 : "This phone signs out of the studio and Virt goes back to its first screen. Training's copy on this phone stays.")
+            Text(AccountCopy.signOutMessage(account.door))
         }
-        .alert("Delete your account?", isPresented: $confirmDelete) {
+        .alert(AccountCopy.deleteTitle, isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) {
                 deleting = true
                 deleteNote = nil
@@ -173,7 +167,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This deletes your Time2Play account and all of your training, for good. Apple asks you to confirm it's you.")
+            Text(AccountCopy.deleteMessage)
         }
         .task {
             let s = await UNUserNotificationCenter.current().notificationSettings()
@@ -184,7 +178,7 @@ struct SettingsView: View {
 
 extension SettingsView {
     var signInFooter: String {
-        if account.midWorkout { return "Finish the workout first, then you can switch." }
+        if account.midWorkout { return AccountAsk.finishFirstLine }
         if deleting { return account.door == .tyler ? "Signing in with Apple…" : "Deleting…" }
         if let n = deleteNote { return n }
         if account.owner { return "Your own Training, signed in with Apple. Only your Apple ID opens it." }
@@ -192,6 +186,18 @@ extension SettingsView {
             ? "Signed in with Apple to your Time2Play account. Only you see your training: no AI and no analytics."
             : "Studio Training, signed in with the studio's email code. Sign in with Apple to use your Apple ID instead: Virt links it to your Training for you."
     }
+}
+
+/// The sign-out and Delete account confirmations, the same words in the sheet and when the page asks.
+enum AccountCopy {
+    static let signOutTitle = "Switch sign-in?"
+    static func signOutMessage(_ door: Door?) -> String {
+        door == .friend
+            ? "You're signed out on this phone and Virt goes back to its first screen. Your training stays in your account."
+            : "This phone signs out of the studio and Virt goes back to its first screen. Training's copy on this phone stays."
+    }
+    static let deleteTitle = "Delete your account?"
+    static let deleteMessage = "This deletes your Time2Play account and all of your training, for good. Apple asks you to confirm it's you."
 }
 
 private struct Tip: View {

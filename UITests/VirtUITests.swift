@@ -689,6 +689,90 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 8), "unlocked: the same page, right where it was")
     }
 
+    // MARK: - Settings through the bridge (the You tab)
+
+    /// The page's You tab and Virt's settings sheet are two views of the same values: the page reads
+    /// `kineticApp.prefs` at load, changes one with `{ type: 'pref' }`, and hears `kinetic:prefs` back; a bad value is
+    /// ignored; the next load starts with the new value; the sheet shows it; and the page's sign out asks with the
+    /// sheet's own confirmation (cancelled here), while Delete account isn't offered on this door at all.
+    func testThePageChangesASettingAndHearsIt() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.prefsPage])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), status(app))
+        XCTAssertTrue(web.staticTexts["at start: lock 15m, sounds true, style chime"].exists, "kineticApp.prefs before the page's scripts")
+        XCTAssertTrue(waitStatus(app, contains: "lock 15m"), status(app))
+        shot("prefs-start")
+
+        web.buttons["Lock never"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "lock never"), "the page's pref changed the stored setting: \(status(app))")
+        XCTAssertTrue(web.staticTexts["event: lock never, sounds true"].waitForExistence(timeout: 10), "kinetic:prefs reached the page")
+        XCTAssertTrue(web.staticTexts["now: lock never"].exists, "kineticApp.prefs is up to date too")
+
+        web.buttons["Lock 5m"].tap()  // not a value Virt knows: ignored
+        sleep(2)
+        XCTAssertTrue(status(app).contains("lock never"), status(app))
+
+        web.buttons["Sounds off"].tap()
+        XCTAssertTrue(web.staticTexts["event: lock never, sounds false"].waitForExistence(timeout: 10))
+
+        app.buttons["dbg-reload"].tap()  // the test build loads the stand-in page again
+        XCTAssertTrue(web.staticTexts["at start: lock never, sounds false, style chime"].waitForExistence(timeout: 20),
+                      "the next load starts with the new values")
+
+        // the native sheet shows the same values
+        app.buttons["dbg-settings"].tap()
+        let sounds = app.switches["sounds-toggle"]
+        XCTAssertTrue(sounds.waitForExistence(timeout: 8), "Virt's settings sheet")
+        XCTAssertEqual(sounds.value as? String, "0", "Sounds is off in the sheet too")
+        shot("prefs-sheet")
+        app.buttons["settings-done"].tap()
+        XCTAssertTrue(sounds.waitForNonExistence(timeout: 5))
+
+        // sign out from the page: the sheet's own confirmation asks (cancelled); Delete account: not on this door
+        web.buttons["Delete account"].tap()
+        sleep(2)
+        XCTAssertFalse(app.alerts.firstMatch.exists, "the studio's door has no Delete account: ignored")
+        web.buttons["Sign out"].tap()
+        let ask = app.alerts["Switch sign-in?"]
+        XCTAssertTrue(ask.waitForExistence(timeout: 8), "the page's sign out asks first")
+        shot("prefs-sign-out")
+        ask.buttons["Cancel"].tap()
+        XCTAssertTrue(ask.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(web.staticTexts["handler: yes"].exists, "cancelled: still signed in, same page")
+    }
+
+    /// Stands in for the You tab: reads kineticApp.prefs at load, posts prefs and account asks, and shows each
+    /// kinetic:prefs event.
+    static let prefsPage = """
+    <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#15171b"></head>
+    <body style="font: 17px -apple-system; margin: 0; padding: 20px 18px; background: #15171b; color: #f2f2f2">
+    <h2 style="margin: 0 0 10px">You</h2>
+    <p id="has">handler: no</p>
+    <p id="start">at start: none</p>
+    <p id="event">event: none</p>
+    <p id="now">now: none</p>
+    <p><button onclick="pref('lockAfter', 'never')" style="font-size: 17px">Lock never</button>
+    <button onclick="pref('lockAfter', '5m')" style="font-size: 17px">Lock 5m</button>
+    <button onclick="pref('sounds', false)" style="font-size: 17px">Sounds off</button></p>
+    <p><button onclick="post({ type: 'signOut' })" style="font-size: 17px">Sign out</button>
+    <button onclick="post({ type: 'deleteAccount' })" style="font-size: 17px">Delete account</button></p>
+    <script>
+    const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kinetic;
+    document.getElementById('has').textContent = h ? 'handler: yes' : 'handler: no';
+    const post = (m) => h && h.postMessage(m);
+    const pref = (key, value) => post({ type: 'pref', key, value });
+    const k = window.kineticApp || {};
+    const p = k.prefs;
+    document.getElementById('start').textContent = p ? 'at start: lock ' + p.lockAfter + ', sounds ' + p.sounds + ', style ' + p.soundStyle : 'at start: none';
+    addEventListener('kinetic:prefs', (e) => {
+      const d = e.detail || {};
+      document.getElementById('event').textContent = 'event: lock ' + d.lockAfter + ', sounds ' + d.sounds;
+      document.getElementById('now').textContent = 'now: lock ' + (window.kineticApp && window.kineticApp.prefs ? window.kineticApp.prefs.lockAfter : 'none');
+    });
+    </script></body></html>
+    """
+
     /// Stands in for train.time2play.live's Today (the friends' Training): its paper look, the session the app hands
     /// over (window.T2P_SESSION, read once and deleted, as the page's client.js does), the kinetic bridge, and the
     /// page's own "Sign out here" (data-sign-out).

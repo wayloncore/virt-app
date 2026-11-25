@@ -14,4 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - shell: bash
-        run: set -o pipefail; cd Core && swift test 2>&1 | tail -40
+        # the last lines, then every failure (the tail alone can cut them off)
+        run: |
+          set +e
+          (cd Core && swift test > /tmp/test.log 2>&1); s=$?
+          tail -40 /tmp/test.log
+          grep -E "error:|failed \(" /tmp/test.log | head -60
+          exit $s

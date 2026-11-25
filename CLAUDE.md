@@ -127,6 +127,23 @@ board has no next set, and each `log` carries its own `id` (`{ command: 'log', a
 a repeat. The board is kept on the phone (`virt.board` in UserDefaults) so a press that wakes Virt after iOS ended it
 still knows the set. `today` may carry `live: true/false` (a workout is open on the page); Virt reads it for the lock
 (`LiveWorkout`), and falls back to the 45-minute rule without it.
+Settings through the bridge (the You tab; VirtCore's `Prefs.swift`, the app's `App/Prefs.swift`; the website documents
+the same contract in its docs/kinetic/bridge.md). All additive:
+- Before the page's scripts, every load: `kineticApp.prefs = { sounds: bool, soundStyle: 'chime'|'digital'|'classic',
+  reminders: bool, reminderLine: '6:00 PM on Mon, Tue and Thu' ('' when off or not known), lockAfter:
+  'now'|'15m'|'1h'|'never', notifications: 'on'|'off' }` ('off' only when iOS has them off; never asked reads 'on').
+  The page decides what to show by whether `kineticApp.prefs` exists.
+- `kinetic:prefs` on `window` (CustomEvent, `detail` = the same object, and `kineticApp.prefs` updated in place)
+  whenever one changes, from the page or Virt's sheet, and each time Virt comes forward.
+- The page posts `{ type: 'pref', key: 'sounds'|'soundStyle'|'reminders'|'lockAfter', value }`,
+  `{ type: 'openNotificationSettings' }`, `{ type: 'deleteAccount' }` (the sheet's own confirmation still asks; a
+  friend's door only, never a guest) and `{ type: 'signOut' }` (the sheet's confirmation; waits during a workout).
+  Unknown keys and values are ignored; only from Training's own main frame. Virt's sheet stays, on the same values.
+- Sounds off is quiet everywhere Virt controls: no sound in the app, and the Lock Screen's timer alerts are scheduled
+  with no sound (so no buzz either). The reminders keep iOS's sound.
+- The screen stays awake only in the workout (`TimerBoard.keepAwake`): `today` may carry `screen: 'workout'|'other'`;
+  with it, awake only on the workout screen (a countdown, or a sign of the workout within 45 minutes); without it,
+  only while a countdown is running.
 
 ## Lock-screen buttons, alerts and the lock (Nov 24)
 - The Live Activity's buttons and Control Center's Log set are `TimerCommandIntent`, a `LiveActivityIntent` that says

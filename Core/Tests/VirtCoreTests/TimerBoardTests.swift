@@ -36,7 +36,8 @@ final class TimerBoardTests: XCTestCase {
         XCTAssertEqual(b.alerts(now: s(60)), [PlannedAlert(identifier: "virt.timer.hold:60", fireAt: s(105), title: "Plank logged", body: "", cue: .rest, length: 45)])
         b.apply(.timerEnd(id: "hold:60"), now: s(105))
         XCTAssertTrue(b.alerts(now: s(105)).isEmpty)
-        XCTAssertTrue(b.keepAwake(now: s(105)), "the workout is still going")
+        XCTAssertFalse(b.keepAwake(now: s(105)), "between steps with no countdown, a page that doesn't say its screen lets it sleep")
+        XCTAssertTrue(b.keepAwake(now: s(105), screen: .workout, screenSaidAt: s(100)), "on the workout screen it stays on")
 
         b.apply(.workoutFinish(WorkoutSummary(mins: 2, exercises: 1, sets: 2, steps: 0)), now: s(120))
         XCTAssertFalse(b.keepAwake(now: s(120)))
@@ -187,16 +188,49 @@ final class TimerBoardTests: XCTestCase {
         XCTAssertEqual(b.alerts(now: s(0)).count, TimerBoard.alertLimit)
     }
 
-    func testScreenStaysOnWhileTheWorkoutIsGoing() {
+    /// Nov 25: the screen stays awake only in the workout. The page keeps a workout live on the other tabs, so a
+    /// workout going isn't enough any more.
+    func testScreenStaysOnOnlyInTheWorkout() {
         var b = TimerBoard()
         XCTAssertFalse(b.keepAwake(now: s(0)))
+        XCTAssertFalse(b.keepAwake(now: s(0), screen: .workout, screenSaidAt: nil), "nothing yet")
         b.apply(.workoutStart(title: "Push A"), now: s(0))
-        XCTAssertTrue(b.keepAwake(now: s(60)))
         XCTAssertEqual(b.title, "Push A")
-        XCTAssertTrue(b.keepAwake(now: s(TimerBoard.quietLimit - 1)))
-        XCTAssertFalse(b.keepAwake(now: s(TimerBoard.quietLimit + 1)), "the page went quiet (closed without saving): let it sleep")
-        b.apply(rest(TimerBoard.quietLimit + 5, 600), now: s(TimerBoard.quietLimit + 5))
-        XCTAssertTrue(b.keepAwake(now: s(TimerBoard.quietLimit + 500)), "a timer keeps it on")
+
+        // a page that doesn't say its screen: only while a countdown runs
+        XCTAssertFalse(b.keepAwake(now: s(60)), "a workout going with no countdown: it sleeps")
+        b.apply(rest(100, 90), now: s(100))
+        XCTAssertTrue(b.keepAwake(now: s(150)), "a countdown keeps it on")
+        XCTAssertFalse(b.keepAwake(now: s(191)), "past the zero with the page asleep: not running")
+        b.apply(.timerPause(id: "rest:100.0", remaining: 40), now: s(150))
+        XCTAssertFalse(b.keepAwake(now: s(151)), "paused isn't running")
+        b.apply(.timerResume(id: "rest:100.0", endsAt: s(200)), now: s(160))
+        XCTAssertTrue(b.keepAwake(now: s(161)))
+
+        // the page says its screen
+        XCTAssertTrue(b.keepAwake(now: s(161), screen: .workout, screenSaidAt: s(160)))
+        XCTAssertFalse(b.keepAwake(now: s(161), screen: .other, screenSaidAt: s(160)), "Today or another tab, even with a countdown running")
+        b.apply(.timerEnd(id: "rest:100.0"), now: s(200))
+        XCTAssertTrue(b.keepAwake(now: s(260), screen: .workout, screenSaidAt: s(10)), "on the workout screen between sets")
+        XCTAssertFalse(b.keepAwake(now: s(260), screen: .other, screenSaidAt: s(250)))
+        XCTAssertTrue(b.keepAwake(now: s(200 + TimerBoard.quietLimit - 1), screen: .workout, screenSaidAt: s(10)))
+        XCTAssertFalse(b.keepAwake(now: s(200 + TimerBoard.quietLimit + 1), screen: .workout, screenSaidAt: s(10)),
+                       "left on the workout screen with nothing happening: it sleeps")
+        XCTAssertTrue(b.keepAwake(now: s(200 + TimerBoard.quietLimit + 1), screen: .workout, screenSaidAt: s(TimerBoard.quietLimit)),
+                      "the page just said it's on the workout screen")
+        b.apply(.setLogged, now: s(3000))  // a page message is a sign too
+        XCTAssertTrue(b.keepAwake(now: s(3001), screen: .workout, screenSaidAt: s(10)))
+    }
+
+    func testAStopwatchHoldAndThePlanAheadKeepItOn() {
+        var b = TimerBoard()
+        b.apply(.timerStart(TimerStart(id: "hold:0", kind: .hold, label: "Plank", endsAt: nil, startedAt: s(0), next: "")), now: s(0))
+        XCTAssertTrue(b.keepAwake(now: s(500)), "a hold counting up is running")
+        var i = TimerBoard()
+        let up = [Step(id: "int:1", kind: .intervalRest, label: "Rest", endsAt: s(40))]
+        i.apply(.timerStart(TimerStart(id: "int:0", kind: .work, label: "Work", endsAt: s(30), startedAt: s(0), next: "Rest", upcoming: up)), now: s(0))
+        XCTAssertTrue(i.keepAwake(now: s(35)), "past this step's zero, the next step's is still ahead")
+        XCTAssertFalse(i.keepAwake(now: s(41)), "past the last planned zero")
     }
 
     func testClosingUnsavedEndsEverything() {
@@ -249,9 +283,9 @@ final class TimerBoardTests: XCTestCase {
         b.apply(.workoutStart(title: "Legs A"), now: s(0))
         b.apply(.today(TodayInfo(title: "Legs A")), now: s(TimerBoard.quietLimit))
         XCTAssertEqual(b.lastMessageAt, s(0))
-        XCTAssertFalse(b.keepAwake(now: s(TimerBoard.quietLimit + 1)))
+        XCTAssertFalse(b.keepAwake(now: s(TimerBoard.quietLimit + 1), screen: .workout, screenSaidAt: s(0)))
         b.apply(.setLogged, now: s(TimerBoard.quietLimit + 2))
-        XCTAssertTrue(b.keepAwake(now: s(TimerBoard.quietLimit + 3)), "a logged set is")
+        XCTAssertTrue(b.keepAwake(now: s(TimerBoard.quietLimit + 3), screen: .workout, screenSaidAt: s(0)), "a logged set is")
         XCTAssertNotNil(b.workout)
     }
 
