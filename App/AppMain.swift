@@ -12,7 +12,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-uitest-reset") {
             UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-            for k in [Reminders.Key.enabled, Reminders.Key.movedTo, SoundBoard.Key.enabled, SoundBoard.Key.style, SharedStore.localKey] {
+            for k in [Reminders.Key.enabled, Reminders.Key.movedTo, SoundBoard.Key.enabled, SoundBoard.Key.style, SharedStore.localKey,
+                      LockAfter.key, TimerBoard.Snapshot.key, LiveWorkout.Memory.key] {
                 UserDefaults.standard.removeObject(forKey: k)
             }
             DoorStore.forget()
@@ -110,7 +111,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         Engine.shared.becameActive()
         // a newer set of Training's screens, if there is one (at most every 30 minutes, never during a workout);
         // it's used from the next launch
-        BundleStore.shared.checkForUpdate(midWorkout: Engine.shared.board.midWorkout(now: Date()))
+        BundleStore.shared.checkForUpdate(midWorkout: Engine.shared.liveWorkout(now: Date()))
     }
 
     func sceneWillResignActive(_ scene: UIScene) { lock.willResignActive() }

@@ -41,7 +41,9 @@ import VirtCore
                                          icon: UNNotificationActionIcon(systemImageName: "play.fill"))
         let cat = UNNotificationCategory(identifier: Self.category, actions: [move, start], intentIdentifiers: [],
                                          options: [])
-        UNUserNotificationCenter.current().setNotificationCategories([cat])
+        // the workout timer's alerts have their own category (no buttons), so the reminders' are never theirs
+        let timer = UNNotificationCategory(identifier: TimerAlerts.category, actions: [], intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([cat, timer])
     }
 
     /// Puts the week's reminders in place (replacing whatever was scheduled).

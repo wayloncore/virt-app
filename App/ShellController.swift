@@ -897,6 +897,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         l.accessibilityIdentifier = "virt-status"
         l.translatesAutoresizingMaskIntoConstraints = false
         var actions: [(String, () -> Void)] = TimerCommand.allCases.map { c in (c.rawValue, { Engine.shared.command(c) }) }
+        // three Log set presses in the same moment (a double tap, or iOS handing one press over more than once)
+        actions.append(("log3", { for _ in 0..<3 { Engine.shared.command(.log) } }))
         actions.append(("rest", { Engine.shared.startRest(seconds: 90) }))
         actions.append(("start", { Engine.shared.startToday() }))
         actions.append(("settings", { [weak self] in self?.showSettings() }))

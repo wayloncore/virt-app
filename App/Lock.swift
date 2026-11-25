@@ -6,16 +6,20 @@ import VirtCore
 /// The Face ID lock. Training is Tyler's health data and the studio's sign-in lasts a month, so Virt keeps it behind
 /// Face ID (the iPhone's passcode is the fallback):
 ///
-/// - a fresh launch shows the lock screen before Training shows anything;
-/// - coming back after 15 minutes or more away locks it again, but never in the middle of a workout
-///   (VirtCore's `LockPolicy` and `TimerBoard.midWorkout`);
-/// - while the app isn't active (the app switcher, Control Center, the Face ID sheet), a plain cover hides Training,
-///   so the app switcher's picture never shows it.
+/// - a fresh launch shows the lock screen before Training shows anything, unless a workout is live (or Lock after is
+///   Never): then Training opens straight away, no launch clip and no Face ID (`LockPolicy.lockedAtLaunch`);
+/// - coming back after the "Lock after" time away (15 minutes unless he changes it in Virt's settings) locks it
+///   again, but never while a workout is live (VirtCore's `LockPolicy`, `LockAfter` and `LiveWorkout`);
+/// - while the app is in the background (the app switcher), a plain cover hides Training, so the app switcher's
+///   picture never shows it. A banner, Control Center, Notification Center or the Face ID sheet only make the app
+///   inactive: no cover then, and the cover lifts as soon as the app comes forward.
+/// - The lock belongs to the app, not the scene: a scene iOS builds again (after discarding it to save memory) picks
+///   up where the last one was, locked or not.
 ///
 /// The lock is its own window above the app's, so the web view keeps loading underneath and Training is ready when
 /// the unlock clip reaches black (the video intro: Intro.swift and VirtCore's `IntroFlow`).
 /// The lock-screen and Dynamic Island buttons and the alerts at zero don't go through here, so they keep working while
-/// it's locked. There's no setting to turn it off, and no way around it.
+/// it's locked. "Lock after: Never" in Virt's settings turns it off; nothing else gets around it.
 @MainActor final class AppLock: ObservableObject {
     /// `unlocking`: Face ID said yes and the unlock clip is playing; Training fades in when it reaches black.
     enum Mode { case open, cover, locked, unlocking }
@@ -30,13 +34,23 @@ import VirtCore
     }
     let playback = IntroPlayback()
 
-    private var policy: LockPolicy
+    /// The app's lock, shared by every scene (a scene iOS builds again starts where the last one left off).
+    private static var shared: LockPolicy?
+    private var policy: LockPolicy {
+        get { Self.shared ?? LockPolicy() }
+        set { Self.shared = newValue }
+    }
     private var active = false
+    /// In the background (the app switcher): the cover is up. Merely inactive (a banner, Control Center, the Face ID
+    /// sheet) isn't.
+    private var inBackground = false
     /// Ask for Face ID by itself the next time the app is active (a fresh launch, or coming back to a locked app).
     private var askWhenActive = true
     private var window: UIWindow?
     private weak var appWindow: UIWindow?
-    private let origin = ContinuousClock.now
+    private static let origin = ContinuousClock.now
+    /// The test build's VIRT_LOCK_AFTER (seconds), which wins over the setting.
+    private static var testLimit: TimeInterval?
     /// The test build's still frames (VIRT_INTRO_AT, VIRT_UNLOCK_AT: seconds into the launch or unlock clip).
     private var frozenLaunchAt: TimeInterval?
     private var frozenUnlockAt: TimeInterval?
@@ -50,7 +64,7 @@ import VirtCore
     private var askBySelf = false
 
     init() {
-        var limit = LockPolicy.standardAwayLimit
+        var limit = LockAfter(stored: UserDefaults.standard.string(forKey: LockAfter.key)).limit
         var answer = Answer.faceID
         var reduceMotion = UIAccessibility.isReduceMotionEnabled
         var introOff = false
@@ -61,7 +75,7 @@ import VirtCore
         if args.contains("-uitest-faceid-fails") { answer = .no }
         if args.contains("-uitest-reduce-motion") { reduceMotion = true }
         if args.contains("-uitest-auto-unlock") { answer = .yes; askBySelf = true }
-        if let s = env["VIRT_LOCK_AFTER"], let n = TimeInterval(s) { limit = n }
+        if let s = env["VIRT_LOCK_AFTER"], let n = TimeInterval(s) { limit = n; Self.testLimit = n }
         if let s = env["VIRT_INTRO_AT"], let n = TimeInterval(s) { frozenLaunchAt = n }
         if let s = env["VIRT_UNLOCK_AT"], let n = TimeInterval(s) { frozenUnlockAt = n }
         if let s = env["VIRT_INTRO_RATE"], let n = Float(s), n > 0 { launchRate = n }
@@ -69,9 +83,24 @@ import VirtCore
         if env["VIRT_INTRO"] == "off" { introOff = true }
         #endif
         self.answer = answer
-        policy = LockPolicy(awayLimit: limit)
-        flow = IntroFlow(reduceMotion: reduceMotion)
-        if introOff || frozenUnlockAt != nil { flow.relocked() }
+        // the first scene of a launch: locked, unless a workout is live (Virt remembers it across a launch) or Lock
+        // after is Never. A scene built again: the app's lock as it is.
+        let fresh = Self.shared == nil
+        if fresh {
+            let live = Engine.shared.liveAtLaunch(now: Date())
+            let lockAfter = LockAfter(stored: UserDefaults.standard.string(forKey: LockAfter.key))
+            var locked = LockPolicy.lockedAtLaunch(lockAfter: lockAfter, liveWorkout: live)
+            #if DEBUG
+            if frozenLaunchAt != nil || frozenUnlockAt != nil { locked = true }  // the intro's still frames
+            #endif
+            Self.shared = LockPolicy(awayLimit: limit, locked: locked)
+        } else {
+            Self.shared?.awayLimit = limit
+        }
+        let opensStraightIn = !Self.shared!.locked
+        flow = opensStraightIn ? IntroFlow.open(reduceMotion: reduceMotion) : IntroFlow(reduceMotion: reduceMotion)
+        if !fresh && !opensStraightIn { flow.relocked() }  // a scene built again while locked: the V, no launch clip
+        if !opensStraightIn && (introOff || frozenUnlockAt != nil) { flow.relocked() }
         playback.onLaunchEnded = { [weak self] in self?.launchEnded() }
         playback.onUnlockEnded = { [weak self] in self?.unlockEnded() }
         if let t = frozenUnlockAt {
@@ -79,6 +108,8 @@ import VirtCore
             playback.playUnlock(frozenAt: t)
         } else if flow.stage == .launch {
             playback.playLaunch(frozenAt: frozenLaunchAt, rate: launchRate)
+        } else if flow.stage == .done {
+            playback.showStill()  // straight into Training; the V is only the app switcher's cover
         } else {
             playback.showStill(animated: flow.reduceMotion && !introOff)
         }
@@ -122,7 +153,7 @@ import VirtCore
 
     /// Seconds on a clock that keeps running while the phone sleeps and can't be set in Settings.
     private var clock: TimeInterval {
-        let d = ContinuousClock.now - origin
+        let d = ContinuousClock.now - Self.origin
         return Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
     }
 
@@ -149,7 +180,7 @@ import VirtCore
         } else if flow.playingOut {
             mode = .unlocking
         } else {
-            mode = active ? .open : .cover
+            mode = inBackground ? .cover : .open
         }
         guard let w = window else { return }
         let hidden = mode == .open
@@ -186,6 +217,8 @@ import VirtCore
 
     // MARK: - The scene's comings and goings (SceneDelegate)
 
+    /// A banner, Control Center, Notification Center, the Face ID sheet or a call: inactive only. No cover (Tyler,
+    /// Nov 24: the V flashed every time he came back).
     func willResignActive() {
         active = false
         update()
@@ -193,6 +226,7 @@ import VirtCore
 
     func didEnterBackground() {
         active = false
+        inBackground = true
         appWindow?.endEditing(true)  // the keyboard's suggestions stay out of the app switcher's picture
         policy.wentAway(at: clock)
         // a clip never resumes partway: back on the lock screen's V, or in Training if Face ID already said yes
@@ -204,8 +238,9 @@ import VirtCore
     }
 
     func willEnterForeground() {
+        inBackground = false  // the cover lifts now, before the app is even active, unless it's locked
         let wasLocked = policy.locked
-        policy.cameBack(at: clock, midWorkout: Engine.shared.board.midWorkout(now: Date()))
+        policy.cameBack(at: clock, midWorkout: Engine.shared.liveWorkout(now: Date()))
         if policy.locked {
             askWhenActive = true
             if !wasLocked {
@@ -220,6 +255,7 @@ import VirtCore
 
     func didBecomeActive() {
         active = true
+        inBackground = false
         update()
         // the Face ID sheet itself makes the app inactive and active again; askWhenActive keeps that from looping
         if policy.locked, askWhenActive, answer == .faceID || askBySelf {
@@ -273,6 +309,16 @@ import VirtCore
             skipIntro()  // the lock screen, so the note and Unlock show
         }
         update()
+    }
+}
+
+extension AppLock {
+    /// Virt's settings changed "Lock after": the next time away is measured against it (the test build's
+    /// VIRT_LOCK_AFTER still wins).
+    static func setLockAfter(_ l: LockAfter) {
+        UserDefaults.standard.set(l.rawValue, forKey: LockAfter.key)
+        guard testLimit == nil else { return }
+        shared?.awayLimit = l.limit
     }
 }
 

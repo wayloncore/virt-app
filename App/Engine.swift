@@ -34,9 +34,20 @@ import WidgetKit
     private var scheduledStyle = SoundBoard.shared.style
     private var chimeTimer: Timer?
     private var tickTimers: [Timer] = []
+    /// The zero whose sound has started (its identifier and end), so arming again never plays it twice.
+    private var soundStarted: String?
     private var quietTimer: Timer?
     private var askedForAlerts = false
     private var askedAboutReminders = false
+    /// Log set from the lock screen: one press is one set (VirtCore's LogPress).
+    private var logPress = LogPress()
+    /// The page's own word on whether a workout is open (`live` on `today`), and when it said it. nil from a page that
+    /// doesn't say.
+    private var pageLive: Bool?
+    private var pageLiveAt: Date?
+    /// The last copies kept on the phone, so they're written only when they change.
+    private var keptBoard: TimerBoard.Snapshot?
+    private var keptLive: LiveWorkout.Memory?
     /// Commands for the page that wait until Training has loaded (Siri, widgets, reminders).
     private var queue = CommandQueue()
     /// The last `today` the page sent (also in the shared keychain, for the widgets).
@@ -49,6 +60,16 @@ import WidgetKit
 
     func launched() {
         SoundBoard.shared.setUp()
+        // the workout as it was when Virt last ran (iOS may have ended the app since): a lock-screen button that woke
+        // this launch still finds the set to log and keeps the Live Activity
+        let now = Date()
+        board = TimerBoard.restored(from: TimerBoard.Snapshot.decode(UserDefaults.standard.data(forKey: TimerBoard.Snapshot.key)), now: now)
+        keptBoard = board.snapshot
+        if let m = LiveWorkout.Memory.decode(UserDefaults.standard.data(forKey: LiveWorkout.Memory.key)) {
+            keptLive = m
+            // the page's own word carries across the launch, until the page speaks again
+            if m.fromPage, m.stillLive(now: now) { pageLive = true; pageLiveAt = m.seenAt }
+        }
         today = SharedStore.loadToday()
         Reminders.shared.registerCategory()
         refreshReminders()
@@ -57,7 +78,7 @@ import WidgetKit
         activity = left.first
         for extra in left.dropFirst() { Task { await extra.end(nil, dismissalPolicy: .immediate) } }
         UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
-            let ours = reqs.filter { $0.identifier.hasPrefix("virt.timer.") }
+            let ours = reqs.filter { TimerAlerts.isTimer($0.identifier) }
             Task { @MainActor in
                 for r in ours {
                     if let t = r.trigger as? UNTimeIntervalNotificationTrigger, let at = t.nextTriggerDate() { self.scheduled[r.identifier] = at }
@@ -71,6 +92,8 @@ import WidgetKit
 
     func receive(_ message: BridgeMessage) {
         switch message {
+        // the first workout asks iOS for alerts while Virt is open, never from a lock-screen press (a locked phone
+        // can't show the ask)
         case .workoutStart, .timerStart: askForAlerts()
         case .today(let t): return receiveToday(t)
         case .setLogged:
@@ -82,10 +105,15 @@ import WidgetKit
         case .workoutFinish: SoundBoard.shared.play(.finish)
         default: break
         }
+        // a finished or closed workout isn't live, whatever the last `today` said
+        if case .workoutFinish = message, pageLive != nil { pageLive = false; pageLiveAt = Date() }
+        if case .workoutClose = message, pageLive != nil { pageLive = false; pageLiveAt = Date() }
         let wasGoing = board.workout != nil
         board.apply(message, now: Date())
         refresh()
         if wasGoing != (board.workout != nil) { refreshReminders() }
+        // the workout's over: its alerts leave Notification Center too
+        if wasGoing && board.workout == nil { clearDeliveredTimerAlerts(everything: true) }
     }
 
     // MARK: - Today, for the widgets, Siri and the reminders
@@ -93,6 +121,11 @@ import WidgetKit
     private func receiveToday(_ t: TodayInfo) {
         var t = t
         t.receivedAt = Date()
+        if let live = t.live {
+            pageLive = live
+            pageLiveAt = t.receivedAt
+            keepLive(now: Date())
+        }
         let changed = !t.samePlan(as: today)
         today = t
         SharedStore.saveToday(t)
@@ -108,7 +141,10 @@ import WidgetKit
     func startFresh() {
         board = TimerBoard()
         queue = CommandQueue()
+        pageLive = nil
+        pageLiveAt = nil
         refresh()
+        clearDeliveredTimerAlerts(everything: true)
         today = nil
         SharedStore.clear()
         WidgetCenter.shared.reloadAllTimelines()
@@ -188,19 +224,60 @@ import WidgetKit
         refresh()
     }
 
-    /// A lock-screen or Dynamic Island button, or the test build's buttons.
+    /// A lock-screen or Dynamic Island button, Control Center's Log set, or the test build's buttons. They run in
+    /// Virt's process with the phone locked, so nothing here asks iOS for anything or needs the phone unlocked.
     func command(_ c: TimerCommand) {
         let now = Date()
-        if c == .log { askForAlerts() }
+        if c == .log {
+            // one press, one set: a burst counts once, and nothing goes with no set left to log (#573). It goes with the
+            // moment it was pressed and its own id, so the page's rest lines up and a repeat is dropped.
+            let cmd = logPress.press(board: &board, now: now, id: UUID().uuidString)
+            refresh()
+            if let cmd { page?.send(page: cmd) }
+            return
+        }
         board.apply(c, now: now)
         refresh()
-        // Log set goes with the moment it was tapped, so the page's rest lines up with the one shown now (#573)
-        if c == .log { page?.send(page: .log(at: now)) } else { page?.send(c) }
+        page?.send(c)
     }
 
     func becameActive() {
         refresh()
         refreshReminders()
+        // Virt's open: no workout-timer alert stays on the Lock Screen or in Notification Center
+        clearDeliveredTimerAlerts(everything: true)
+    }
+
+    // MARK: - Live workouts (the lock never asks during one)
+
+    /// True while a workout is live: the page's word when it gives one, Virt's own rule otherwise (VirtCore's
+    /// LiveWorkout).
+    func liveWorkout(now: Date) -> Bool {
+        LiveWorkout.isLive(pageLive: pageLive, pageSaidAt: pageLiveAt, board: board, now: now)
+    }
+
+    /// At a fresh launch or a scene iOS built again: was a workout live when Virt last ran?
+    func liveAtLaunch(now: Date) -> Bool {
+        liveWorkout(now: now) || (keptLive?.stillLive(now: now) ?? false)
+    }
+
+    /// Keeps the board and the live state on the phone (UserDefaults: readable with the phone locked after its first
+    /// unlock, which is when the lock-screen buttons run), only when they change.
+    private func keep(now: Date) {
+        let snap = board.snapshot
+        if snap != keptBoard {
+            keptBoard = snap
+            UserDefaults.standard.set(snap.encoded(), forKey: TimerBoard.Snapshot.key)
+        }
+        keepLive(now: now)
+    }
+
+    private func keepLive(now: Date) {
+        let live = liveWorkout(now: now)
+        if let k = keptLive, k.live == live, k.fromPage == (pageLive != nil), !live || now.timeIntervalSince(k.seenAt) < 30 { return }
+        let m = LiveWorkout.Memory(live: live, seenAt: now, fromPage: pageLive != nil)
+        keptLive = m
+        UserDefaults.standard.set(m.encoded(), forKey: LiveWorkout.Memory.key)
     }
 
     // MARK: - Out
@@ -213,11 +290,27 @@ import WidgetKit
         UIApplication.shared.isIdleTimerDisabled = board.keepAwake(now: now)
         armChime(now: now)
         armQuietCheck()
+        keep(now: now)
+        // each time Virt runs, the timer alerts already delivered go (one still sounding stays while in the background)
+        clearDeliveredTimerAlerts(everything: UIApplication.shared.applicationState == .active)
         onChange?()
     }
 
+    /// Takes the workout timer's delivered alerts out of Notification Center and off the Lock Screen (VirtCore's
+    /// TimerAlerts). Reminders are never touched.
+    private func clearDeliveredTimerAlerts(everything: Bool) {
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { list in
+            let ids = TimerAlerts.toRemove(delivered: list.map { (id: $0.request.identifier, at: $0.date) }, now: Date(),
+                                           everything: everything)
+            if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+        }
+    }
+
+    /// Asks iOS for alerts once, and only with Virt open on the screen (never from a lock-screen press or Siri in the
+    /// background: a locked phone can't show the ask).
     private func askForAlerts() {
-        guard !askedForAlerts else { return }
+        guard !askedForAlerts, UIApplication.shared.applicationState == .active else { return }
         askedForAlerts = true
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in
             Task { @MainActor in self.scheduled = [:]; self.refresh() }
@@ -235,16 +328,21 @@ import WidgetKit
         if !gone.isEmpty { center.removePendingNotificationRequests(withIdentifiers: gone) }
         for id in gone { scheduled[id] = nil }
         for a in plan {
-            if let had = scheduled[a.identifier], abs(had.timeIntervalSince(a.fireAt)) < 0.05 { continue }
+            // the green light starts a moment early, so its go tone lands on the zero
+            let soundAt = a.fireAt.addingTimeInterval(-SoundBoard.shared.style.lead(a.cue))
+            if let had = scheduled[a.identifier], abs(had.timeIntervalSince(soundAt)) < 0.05 { continue }
             let content = UNMutableNotificationContent()
             content.title = a.title
             content.body = a.body
             content.sound = SoundBoard.shared.notificationSound(a.cue)
             content.interruptionLevel = .active
-            content.threadIdentifier = "virt.timer"
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(0.1, a.fireAt.timeIntervalSince(now)), repeats: false)
+            // its own category and thread, apart from the reminders, and last in the list
+            content.categoryIdentifier = TimerAlerts.category
+            content.threadIdentifier = TimerAlerts.thread
+            content.relevanceScore = 0
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(0.1, soundAt.timeIntervalSince(now)), repeats: false)
             center.add(UNNotificationRequest(identifier: a.identifier, content: content, trigger: trigger))
-            scheduled[a.identifier] = a.fireAt
+            scheduled[a.identifier] = soundAt
         }
     }
 
@@ -287,7 +385,16 @@ import WidgetKit
         guard let next = board.alerts(now: now).min(by: { $0.fireAt < $1.fireAt }) else { return }
         let cue = next.cue
         chimeTimer = exactTimer(at: next.fireAt) { self.zero(cue) }
-        for at in LeadIn.ticks(zero: next.fireAt, now: now, length: next.length) {
+        // the zero sound starts early by its own lead-in (the green light's three tones), so its main tone is the zero
+        let lead = SoundBoard.shared.style.lead(cue)
+        let soundAt = next.fireAt.addingTimeInterval(-lead)
+        let key = "\(next.identifier)@\(next.fireAt.timeIntervalSince1970)"
+        if soundAt > now {
+            tickTimers.append(exactTimer(at: soundAt) { self.zeroSound(cue, key: key) })
+        } else if soundStarted != key {
+            zeroSound(cue, key: key)  // armed again inside the lead-in (a page message just then): late, never missed
+        }
+        for at in LeadIn.ticks(zero: next.fireAt, now: now, length: next.length, lead: lead) {
             tickTimers.append(exactTimer(at: at) { SoundBoard.shared.play(.leadIn) })
         }
     }
@@ -299,9 +406,15 @@ import WidgetKit
         return t
     }
 
+    /// The zero's sound, while the app is open (the notification is held back then). Once per zero.
+    private func zeroSound(_ cue: SoundCue, key: String) {
+        guard soundStarted != key else { return }
+        soundStarted = key
+        if UIApplication.shared.applicationState == .active { SoundBoard.shared.play(cue) }
+    }
+
     private func zero(_ cue: SoundCue) {
         if UIApplication.shared.applicationState == .active {
-            SoundBoard.shared.play(cue)
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1)
@@ -367,7 +480,7 @@ final class AlertPresenter: NSObject, UNUserNotificationCenterDelegate {
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         let id = notification.request.identifier
         // the timer chimes itself while the app is open, and a reminder isn't needed with Virt already open
-        completionHandler(id.hasPrefix("virt.timer.") || id.hasPrefix(ReminderPlan.prefix) ? [] : [.banner, .sound])
+        completionHandler(TimerAlerts.isTimer(id) || id.hasPrefix(ReminderPlan.prefix) ? [] : [.banner, .sound])
     }
 
     /// A reminder's buttons: Move it (an hour later, without opening Virt), Start, or a tap (opens to today).

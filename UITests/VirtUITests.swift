@@ -470,6 +470,27 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(waitStatus(app, contains: "activity off"), status(app))
     }
 
+    /// One press is one set (Tyler, Nov 24: Log set on the lock screen logged a whole exercise): three presses in the
+    /// same moment reach the page as one `log`, with its own id, and the page logs one set.
+    func testABurstOfLogSetPressesLogsOneSet() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), "the page sees the kinetic handler")
+        web.buttons["Open exercise"].tap()
+        allowAlerts()
+        XCTAssertTrue(waitStatus(app, contains: "next Chest press machine · set 2 of 4 · 105 × 10"), status(app))
+        XCTAssertTrue(app.buttons["dbg-log3"].waitForExistence(timeout: 10))
+        app.buttons["dbg-log3"].tap()
+        XCTAssertTrue(web.staticTexts["logged: 1"].waitForExistence(timeout: 10), "the page logged a set")
+        XCTAssertTrue(web.staticTexts["log id: yes"].exists, "the log carried its own id")
+        sleep(2)
+        XCTAssertFalse(web.staticTexts["logged: 2"].exists, "one set for the burst, not three")
+        XCTAssertTrue(waitStatus(app, contains: "next Chest press machine · set 3 of 4 · 105 × 10"), status(app))
+        XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 10))
+        web.buttons["Finish"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "next none"), status(app))
+    }
+
     /// The video intro's frames, held still (the test build's VIRT_INTRO_AT and VIRT_UNLOCK_AT, seconds into each
     /// clip): the word as the light crosses it, mid-wipe, the V growing, the launch clip's last frame, the lock
     /// screen's still (the same frame), and the unlock clip flying into the V.
@@ -763,6 +784,7 @@ final class VirtUITests: XCTestCase {
     <p><button onclick="openEx()">Open exercise</button></p>
     <p id="cmd">command: none</p>
     <p id="logged">logged: 0</p>
+    <p id="logid">log id: none</p>
     <script>
     const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kinetic;
     document.getElementById('has').textContent = h ? 'handler: yes' : 'handler: no';
@@ -794,7 +816,10 @@ final class VirtUITests: XCTestCase {
     addEventListener('kinetic:command', (e) => {
       const c = typeof e.detail === 'string' ? e.detail : e.detail && e.detail.command;
       document.getElementById('cmd').textContent = 'command: ' + c + (c === 'rest' ? ' ' + e.detail.seconds : '');
-      if (c === 'log') { const at = e.detail && e.detail.at; logIt(typeof at === 'number' && at <= Date.now() ? at : Date.now()); }
+      if (c === 'log') {
+        document.getElementById('logid').textContent = 'log id: ' + (typeof e.detail.id === 'string' && e.detail.id.length > 8 ? 'yes' : 'no');
+        const at = e.detail && e.detail.at; logIt(typeof at === 'number' && at <= Date.now() ? at : Date.now());
+      }
       if (c === 'rest') { paused = false; start = Date.now(); end = start + e.detail.seconds * 1000; post({ type: 'workout.start', title: 'Bridge test' }); post(startMsg()); }
       if (c === 'add15' && !paused) { end += 15000; post(startMsg()); }
       if (c === 'pause' && !paused) { paused = true; left = end - Date.now(); post({ type: 'timer.pause', id: 'rest:' + start, remaining: left }); }

@@ -122,6 +122,27 @@ Log set; Log set starts the set's rest at once and shows the following set, sinc
 Virt already reads an optional
 `upcoming` list on `timer.start` (the steps after this one, each `{ id, kind, label, endsAt }`) and schedules an alert
 at each of their zeros; until the page sends it, only the running step's zero sounds while the phone is locked.
+One press is one set (Nov 24, VirtCore's `LogPress`): presses within 0.6 s count once, nothing is sent when Virt's
+board has no next set, and each `log` carries its own `id` (`{ command: 'log', at, id }`, additive) so the page can drop
+a repeat. The board is kept on the phone (`virt.board` in UserDefaults) so a press that wakes Virt after iOS ended it
+still knows the set. `today` may carry `live: true/false` (a workout is open on the page); Virt reads it for the lock
+(`LiveWorkout`), and falls back to the 45-minute rule without it.
+
+## Lock-screen buttons, alerts and the lock (Nov 24)
+- The Live Activity's buttons and Control Center's Log set are `TimerCommandIntent`, a `LiveActivityIntent` that says
+  outright it runs while locked (`authenticationPolicy = .alwaysAllowed`), never opens the app (`openAppWhenRun =
+  false`; iOS 26 `supportedModes = .background`), and touches only what a locked phone allows after its first unlock.
+  It never asks iOS for alert permission: that's asked while Virt is open, when the first workout starts.
+- Workout-timer alerts: iOS plays a notification's sound only with words to show, so each zero is still a quiet
+  notification (category and thread `virt.timer`), but Virt takes the delivered ones away every time it runs, all of
+  them when it comes forward or the workout ends (`TimerAlerts`); reminders are never touched. While Virt is open
+  there's no banner at all: the app plays its own sound.
+- The green light (`virt-start-go.caf`, `scripts/sounds.py start`) is the sound when a rest ends in Chime and Digital:
+  three short tones then go, started 1.2 s early so the go lands on the zero (`SoundStyle.lead`), with no 3-2-1 ticks.
+- The lock: the cover shows only in the background (not for Control Center, Notification Center or the Face ID sheet)
+  and lifts on return; never a lock or the launch clip while a workout is live (remembered across a launch,
+  `virt.workout.live`); the lock is the app's, not the scene's; "Lock after" in Virt's settings (`lock.after`: Right
+  away, 15 minutes, 1 hour, Never).
 
 ## Testing
 - **Linux:** `core.yml` runs on push. Locally, if Swift is installed: `cd Core && swift test`.

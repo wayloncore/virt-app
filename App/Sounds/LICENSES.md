@@ -5,6 +5,7 @@ All of Virt's sounds are free to use. Nothing here needs credit, but this is whe
 | Files | Source | License |
 |---|---|---|
 | `virt-chime-*.caf` (the Chime style) | Synthesized for Virt by `scripts/sounds.py synth` | Virt's own |
+| `virt-start-go.caf` (the green light: when a rest ends, in Chime and Digital) | Synthesized for Virt by `scripts/sounds.py start` | Virt's own |
 | `virt-digital-*.caf` (the Digital style) | Picked, trimmed and leveled from Kenney's Interface Sounds (`scripts/sound-picks.json` names each file) by `.github/workflows/sounds.yml` | CC0 1.0 (public domain) |
 | `virt-chime.wav` (the Classic style; in `App/`) | Virt's first chime | Virt's own |
 

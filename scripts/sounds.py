@@ -3,6 +3,7 @@
 notification sound, 30 seconds at most).
 
   sounds.py synth OUTDIR             makes the Chime style: clean synthesized bells (no downloads needed)
+  sounds.py start OUTDIR             makes only the green light (virt-start-go.caf), the sound when a rest ends
   sounds.py survey PACKDIR SHOTDIR   lists every sound in the Kenney packs with its length, level, pitch and decay,
                                      and draws spectrograms of the likely bells, chimes, ticks and clicks
   sounds.py pick PACKDIR PICKS OUTDIR  trims and levels the files PICKS (a JSON file) names, into the Digital style
@@ -113,6 +114,43 @@ def synth_cue(cue):
     raise ValueError(cue)
 
 
+# The green light (Tyler, Nov 24: "a training green-light sound"), like the start of a race: three short even tones,
+# then one longer, higher "go" tone an octave up. Pure tones with a soft second partial and gentle edges, so it's
+# clean, not harsh. The go tone starts at START_LEAD seconds (VirtCore's SoundStyle.startLead), so the app starts the
+# sound that much before the zero and the go lands on it. Under 2 seconds in all.
+START_LEAD = 1.2
+START_PEAK = -6.0
+
+
+def tone(freq, seconds, rise=0.008, fall=0.06, second=0.18):
+    """A clean tone: the note, a soft octave partial, a 8 ms rise and a smooth fall (no click at either end)."""
+    t = t_axis(seconds)
+    x = np.sin(2 * np.pi * freq * t) + second * np.sin(2 * np.pi * 2 * freq * t)
+    env = np.ones_like(t)
+    r, f = int(rise * RATE), int(fall * RATE)
+    env[:r] = 0.5 - 0.5 * np.cos(np.pi * np.arange(r) / r)
+    env[-f:] *= 0.5 + 0.5 * np.cos(np.pi * np.arange(f) / f)
+    return x * env
+
+
+def green_light():
+    beep, go = 880.0, 1760.0  # A5 for the three, A6 for go
+    parts = [(i * 0.4, tone(beep, 0.13), 0.8) for i in range(3)]
+    # the go tone: longer, with a slow fade so it rings out
+    t = t_axis(0.6)
+    ring = tone(go, 0.6, fall=0.25, second=0.12) * np.exp(-t / 0.9)
+    parts.append((START_LEAD, ring, 1.0))
+    return place(parts, START_LEAD + 0.62)
+
+
+def start(outdir):
+    os.makedirs(outdir, exist_ok=True)
+    x = level(green_light(), START_PEAK)
+    path = os.path.join(outdir, "virt-start-go.caf")
+    write_caf(path, x)
+    print(f"{os.path.basename(path)}: {len(x) / RATE:.2f} s, {os.path.getsize(path) // 1024} KB")
+
+
 def synth(outdir):
     os.makedirs(outdir, exist_ok=True)
     for cue in CUES:
@@ -120,6 +158,7 @@ def synth(outdir):
         path = os.path.join(outdir, f"virt-chime-{cue}.caf")
         write_caf(path, x)
         print(f"{os.path.basename(path)}: {len(x) / RATE:.2f} s, {os.path.getsize(path) // 1024} KB")
+    start(outdir)
 
 
 # ---------- the Kenney packs ----------
@@ -230,6 +269,8 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "synth":
         synth(sys.argv[2])
+    elif cmd == "start":
+        start(sys.argv[2])
     elif cmd == "survey":
         survey(sys.argv[2], sys.argv[3])
     elif cmd == "pick":
