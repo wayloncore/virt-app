@@ -491,6 +491,37 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(waitStatus(app, contains: "next none"), status(app))
     }
 
+    /// Tyler, Nov 25: Log set from the lock screen with no Face ID. The simulator can't lock and press a Live Activity
+    /// button, so this checks what can be: every button's intent runs locked and never opens the app (read from the
+    /// real types), what a press reads is kept readable with the phone locked, and a press made while the page is asleep
+    /// (or before iOS has made a screen for Virt) is held and reaches the page once it's up, as one set.
+    func testLockScreenButtonsNeverAskToUnlock() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), "the page sees the kinetic handler")
+        XCTAssertTrue(waitStatus(app, contains: "intents ok", 5), "every button's intent: \(status(app))")
+        XCTAssertTrue(status(app).contains("locked-read ok"), "readable with the phone locked: \(status(app))")
+        web.buttons["Open exercise"].tap()
+        allowAlerts()
+        XCTAssertTrue(waitStatus(app, contains: "next Chest press machine · set 2 of 4 · 105 × 10"), status(app))
+        XCTAssertTrue(status(app).contains("held 0"), status(app))
+        XCTAssertTrue(app.buttons["dbg-logheld"].waitForExistence(timeout: 10))
+        app.buttons["dbg-logheld"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "held 1", 3), "the press waits for the page: \(status(app))")
+        XCTAssertTrue(status(app).contains("timer virt-rest:"), "its rest started with the page asleep: \(status(app))")
+        XCTAssertFalse(web.staticTexts["logged: 1"].exists, "not handed to a sleeping page")
+        XCTAssertTrue(web.staticTexts["logged: 1"].waitForExistence(timeout: 10), "handed over once the page was up: \(status(app))")
+        XCTAssertTrue(web.staticTexts["log id: yes"].exists, "with its own id")
+        XCTAssertTrue(waitStatus(app, contains: "held 0", 5), status(app))
+        XCTAssertTrue(waitStatus(app, contains: "next Chest press machine · set 3 of 4 · 105 × 10"), "one set, not two: \(status(app))")
+        sleep(2)
+        XCTAssertFalse(web.staticTexts["logged: 2"].exists, "handed over once")
+        XCTAssertTrue(status(app).contains("locked-read ok"), "still readable locked after the saves: \(status(app))")
+        XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 10))
+        web.buttons["Finish"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "next none"), status(app))
+    }
+
     /// The video intro's frames, held still (the test build's VIRT_INTRO_AT and VIRT_UNLOCK_AT, seconds into each
     /// clip): the word as the light crosses it, mid-wipe, the V growing, the launch clip's last frame, the lock
     /// screen's still (the same frame), and the unlock clip flying into the V.

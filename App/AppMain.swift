@@ -13,7 +13,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         if ProcessInfo.processInfo.arguments.contains("-uitest-reset") {
             UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
             for k in [Reminders.Key.enabled, Reminders.Key.movedTo, SoundBoard.Key.enabled, SoundBoard.Key.style, SharedStore.localKey,
-                      LockAfter.key, TimerBoard.Snapshot.key, LiveWorkout.Memory.key] {
+                      LockAfter.key, TimerBoard.Snapshot.key, LiveWorkout.Memory.key, PendingLogs.key] {
                 UserDefaults.standard.removeObject(forKey: k)
             }
             DoorStore.forget()
@@ -40,8 +40,17 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             }
         }
         #endif
+        // what a lock-screen press reads stays readable with the phone locked (moved now if an older copy wasn't)
+        LockedRead.moveIfNeeded()
         Engine.shared.launched()
         return true
+    }
+
+    /// The phone was unlocked: anything Virt couldn't read while it was locked (iOS started Virt for a press before
+    /// the first unlock, say) is read now, and moved so it can be read locked next time.
+    func applicationProtectedDataDidBecomeAvailable(_ application: UIApplication) {
+        LockedRead.moveIfNeeded()
+        Engine.shared.protectedDataAvailable()
     }
 
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,

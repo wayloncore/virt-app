@@ -406,11 +406,15 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     func send(_ command: TimerCommand) { send(page: .timer(command)) }
 
-    func send(page command: PageCommand) {
+    func send(page command: PageCommand) { send(page: command) { _ in } }
+
+    func send(page command: PageCommand, done: @escaping @MainActor (Bool) -> Void) {
         // a little time in the background so the page can take it, if it's awake
         let task = UIApplication.shared.beginBackgroundTask(withName: "virt.command")
-        web.evaluateJavaScript(command.script) { _, _ in
+        web.evaluateJavaScript(command.script) { _, error in
             if task != .invalid { UIApplication.shared.endBackgroundTask(task) }
+            // an error means the script never ran (the page's process was ended, say); the script itself can't throw
+            MainActor.assumeIsolated { done(error == nil) }
         }
     }
 
@@ -973,9 +977,18 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         l.backgroundColor = UIColor.black.withAlphaComponent(0.7)
         l.accessibilityIdentifier = "virt-status"
         l.translatesAutoresizingMaskIntoConstraints = false
-        var actions: [(String, () -> Void)] = TimerCommand.allCases.map { c in (c.rawValue, { Engine.shared.command(c) }) }
+        // each runs the Live Activity's own intent, the way the system does for a lock-screen press
+        let press: (TimerCommand) -> Void = { c in _ = Task { _ = try? await TimerCommandIntent(c).perform() } }
+        var actions: [(String, () -> Void)] = TimerCommand.allCases.map { c in (c.rawValue, { press(c) }) }
         // three Log set presses in the same moment (a double tap, or iOS handing one press over more than once)
-        actions.append(("log3", { for _ in 0..<3 { Engine.shared.command(.log) } }))
+        actions.append(("log3", { for _ in 0..<3 { press(.log) } }))
+        // Log set with the page asleep (or no page: iOS started Virt just for the press): held, then handed over
+        // when the page is up again
+        actions.append(("logheld", {
+            Engine.shared.pageAsleepForTest()
+            press(.log)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { Engine.shared.pageReady() }
+        }))
         actions.append(("rest", { Engine.shared.startRest(seconds: 90) }))
         actions.append(("start", { Engine.shared.startToday() }))
         actions.append(("settings", { [weak self] in self?.showSettings() }))

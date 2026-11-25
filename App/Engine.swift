@@ -9,6 +9,9 @@ import WidgetKit
 @MainActor protocol PageCommands: AnyObject {
     func send(_ command: TimerCommand)
     func send(page command: PageCommand)
+    /// Hands the page a command and says afterward whether the page took it (false: the web view couldn't run it,
+    /// say its page process was ended while the phone was locked).
+    func send(page command: PageCommand, done: @escaping @MainActor (Bool) -> Void)
     /// Shows Training's front page unless a workout is going (Navigation.todayAction).
     func goToToday(midWorkout: Bool)
     /// The first-time reminders ask.
@@ -43,6 +46,9 @@ import WidgetKit
     private var askedAboutReminders = false
     /// Log set from the lock screen: one press is one set (VirtCore's LogPress).
     private var logPress = LogPress()
+    /// Log set presses the page hasn't been handed yet (no page, or it was loading): kept on the phone and handed over
+    /// when Training is up (VirtCore's PendingLogs).
+    private var pendingLogs = PendingLogs()
     /// The page's own word on whether a workout is open (`live` on `today`), and when it said it. nil from a page that
     /// doesn't say.
     private var pageLive: Bool?
@@ -76,6 +82,7 @@ import WidgetKit
             // the page's own word carries across the launch, until the page speaks again
             if m.fromPage, m.stillLive(now: now) { pageLive = true; pageLiveAt = m.seenAt }
         }
+        pendingLogs = PendingLogs.decode(UserDefaults.standard.data(forKey: PendingLogs.key)) ?? PendingLogs()
         today = SharedStore.loadToday()
         Reminders.shared.registerCategory()
         refreshReminders()
@@ -135,6 +142,9 @@ import WidgetKit
         let changed = !t.samePlan(as: today)
         today = t
         SharedStore.saveToday(t)
+        #if DEBUG
+        LockedRead.recheck()
+        #endif
         if changed { WidgetCenter.shared.reloadAllTimelines() }
         pageScreen = t.workoutScreen
         pageScreenAt = t.receivedAt
@@ -151,6 +161,8 @@ import WidgetKit
     func startFresh() {
         board = TimerBoard()
         queue = CommandQueue()
+        pendingLogs = PendingLogs()
+        keepPendingLogs()
         pageLive = nil
         pageLiveAt = nil
         pageScreen = nil
@@ -222,8 +234,38 @@ import WidgetKit
         applyAwake(now: Date())
     }
 
-    /// Training is up and listening: send what's waiting.
-    func pageReady() { flush(queue.pageReady(now: Date())) }
+    /// Training is up and listening: send what's waiting, and the Log set presses it hasn't heard yet.
+    func pageReady() {
+        let now = Date()
+        flush(queue.pageReady(now: now))
+        let held = pendingLogs.take(now: now)
+        keepPendingLogs()
+        for c in held { deliver(c) }
+    }
+
+    /// A Log set press for the page: handed over now when Training is up, otherwise held (on the phone) until it is.
+    /// If the web view couldn't run it, it's held again; the page drops a press whose id it has already logged.
+    private func deliver(_ cmd: PageCommand) {
+        guard let page, queue.ready else { return hold(cmd) }
+        if case .log = cmd { sentCommands.append("log") }
+        page.send(page: cmd) { [weak self] took in
+            if !took { self?.hold(cmd) }
+        }
+    }
+
+    private func hold(_ cmd: PageCommand) {
+        pendingLogs.hold(cmd)
+        keepPendingLogs()
+        onChange?()
+    }
+
+    private func keepPendingLogs() {
+        UserDefaults.standard.set(pendingLogs.isEmpty ? nil : pendingLogs.encoded(), forKey: PendingLogs.key)
+    }
+
+    /// For the test build: the page counts as not ready (asleep, or iOS started Virt for a press with no screen), so
+    /// the next presses are held; `pageReady()` hands them over.
+    func pageAsleepForTest() { queue.pageLoading() }
 
     private func flush(_ commands: [PageCommand]) {
         for c in commands {
@@ -259,12 +301,20 @@ import WidgetKit
             // moment it was pressed and its own id, so the page's rest lines up and a repeat is dropped.
             let cmd = logPress.press(board: &board, now: now, id: UUID().uuidString)
             refresh()
-            if let cmd { page?.send(page: cmd) }
+            if let cmd { deliver(cmd) }
             return
         }
         board.apply(c, now: now)
         refresh()
         page?.send(c)
+    }
+
+    /// The phone was unlocked: a `today` that couldn't be read at a locked launch is read now.
+    func protectedDataAvailable() {
+        if today == nil, let t = SharedStore.loadToday() {
+            today = t
+            refreshReminders()
+        }
     }
 
     func becameActive() {
@@ -503,6 +553,11 @@ import WidgetKit
         parts.append("reminders \(Reminders.shared.count) (ask \(askNote))")
         parts.append("taps \(lightTaps)")
         parts.append("sound \(SoundBoard.shared.last)")
+        parts.append("held \(pendingLogs.count)")
+        #if DEBUG
+        parts.append("locked-read \(LockedRead.summary)")
+        parts.append("intents \(IntentAudit.summary)")
+        #endif
         parts.append("sent \(sentCommands.isEmpty ? "none" : sentCommands.joined(separator: ","))")
         parts.append("intro \(introSeen.joined(separator: ">"))")
         return parts.joined(separator: " · ")

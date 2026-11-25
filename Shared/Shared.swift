@@ -12,15 +12,24 @@ struct VirtTimerAttributes: ActivityAttributes {
     var title: String
 }
 
-/// A lock-screen or Dynamic Island button, and Control Center's Log set. The system runs it in the app (a
-/// LiveActivityIntent), in the background, which updates the Live Activity at once and hands the command to the page as
-/// `kinetic:command`.
+/// A lock-screen or Dynamic Island button, and Control Center's Log set. The system runs it in the app, in the
+/// background, which updates the Live Activity at once and hands the command to the page as `kinetic:command`.
 ///
-/// It must work with the phone locked, the way a music app's buttons do (Tyler, Nov 24). So, said outright rather than
-/// left to the defaults: it runs while locked (`authenticationPolicy`), it never opens the app (`openAppWhenRun`, and
-/// on iOS 26 `supportedModes`), and what it runs (Engine.command) asks iOS for nothing and reads only what a locked
-/// phone allows after its first unlock (UserDefaults and the AfterFirstUnlock keychain copies).
-struct TimerCommandIntent: LiveActivityIntent {
+/// It must work with the phone locked and never ask for Face ID, the way a music app's buttons do (Tyler, Nov 24 and
+/// 25; docs/lock-screen-buttons.md has Apple's words for each line here):
+/// - `LiveActivityIntent` and `AudioPlaybackIntent`: Apple's two kinds of intent that run in the app's own process
+///   from a widget or Live Activity. Apple says to adopt the audio one when the interaction starts or pauses
+///   playback; Virt's buttons pause, move and skip the timer whose zero is a sound, and Log set starts a rest that
+///   ends in one. It's the kind music apps' lock-screen buttons use.
+/// - `authenticationPolicy = .alwaysAllowed`: "allows the app intent to run at any time, including when the device is
+///   locked". It's Apple's default, said outright anyway.
+/// - It never opens the app (`openAppWhenRun = false`; on iOS 26, `supportedModes = .background`): opening an app
+///   from the Lock Screen is what asks for Face ID.
+/// - What it runs (Engine.command) asks iOS for nothing and reads only what a locked phone allows after its first
+///   unlock (UserDefaults, and keychain copies kept "after first unlock": VirtCore's LockedAccess).
+/// - No parameter is left for the system to ask about: the button fills in `command`.
+/// VirtCore's LockScreenButtonsTests reads this declaration and fails if any of it goes.
+struct TimerCommandIntent: LiveActivityIntent, AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Timer button"
     static let isDiscoverable = false
     static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
