@@ -41,9 +41,6 @@ import VirtCore
         page?.prefsChanged(p)
     }
 
-    /// A new page loaded: it read the prefs from its start script, so that's what it was told.
-    func pageLoaded() { told = current }
-
     /// Virt came forward (or started): iOS's notification setting may have changed in Settings, so read it and tell
     /// the page either way.
     func cameForward() {

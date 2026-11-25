@@ -7,7 +7,7 @@ import WebKit
 /// The web view around Training: studio Training through Tyler's door, or train.time2play.live through a friend's
 /// (Account.swift), with the `kinetic` bridge, the sign-in kept inside the app, pull to refresh, a plain offline screen
 /// with Retry, and the status bar matched to the page. With no door yet, the first screen (DoorsView) asks.
-final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, PageCommands {
+final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, PageCommands, PrefsPage {
     private var web: WKWebView!
     private let statusBack = UIView()
     private let refresher = UIRefreshControl()
@@ -145,6 +145,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
         showSplash()
         Engine.shared.page = self
+        PrefsHub.shared.page = self
         if testing { addTestStatus() }
         CookieKeeper.restore(into: config.websiteDataStore.httpCookieStore) { [weak self] in self?.pickDoor() }
     }
@@ -254,7 +255,10 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         guard bound else { return }
         let ucc = web.configuration.userContentController
         ucc.removeAllUserScripts()
-        ucc.addUserScript(WKUserScript(source: PageStart.script(build: BundleStore.shared.build), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // with Virt's settings for the You tab (kineticApp.prefs); installed again whenever one changes, so every load
+        // starts with the current values
+        ucc.addUserScript(WKUserScript(source: PageStart.script(build: BundleStore.shared.build, prefs: PrefsHub.shared.current),
+                                       injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let bundled = self.bundled
         // bundled: the page is told where its API is, and the session goes to the bundle's own page as well
         if bundled { ucc.addUserScript(WKUserScript(source: PageStart.apiBaseScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)) }
@@ -502,6 +506,62 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         host.sheetPresentationController?.detents = [.medium()]
         host.sheetPresentationController?.prefersGrabberVisible = true
         present(host, animated: true)
+    }
+
+    // MARK: - Settings through the bridge (the You tab)
+
+    /// A setting changed (the sheet, the page, or iOS's notification setting): the next load starts with it, and the
+    /// page showing now hears `kinetic:prefs`.
+    func prefsChanged(_ prefs: AppPrefs) {
+        installScripts()
+        guard onTraining, doorsHost == nil else { return }
+        web.evaluateJavaScript(prefs.eventScript) { _, _ in }
+        updateStatusLine()
+    }
+
+    /// What the page asked on the bridge (VirtCore's AppRequest; the handler has checked it's Training's own main
+    /// frame). Sign out and Delete account follow the settings sheet's rules and show its own confirmations.
+    func pageAsked(_ r: AppRequest) {
+        guard door != nil, doorsHost == nil else { return }
+        let hub = PrefsHub.shared
+        switch r {
+        case .setSounds(let on): hub.setSounds(on)
+        case .setSoundStyle(let st): hub.setStyle(st, preview: SoundBoard.shared.enabled && st != SoundBoard.shared.style)
+        case .setReminders(let on): hub.setRemindersFromPage(on)
+        case .setLockAfter(let l): hub.setLockAfter(l)
+        case .openNotificationSettings: hub.openNotificationSettings()
+        case .signOut, .deleteAccount:
+            let ask = AccountAsk.decide(r, door: door, owner: friendSession?.isOwner == true, guest: guest,
+                                        midWorkout: Engine.shared.board.midWorkout(now: Date()))
+            accountAsk(ask)
+        }
+    }
+
+    private func accountAsk(_ ask: AccountAsk) {
+        let a: UIAlertController
+        switch ask {
+        case .ignore:
+            return
+        case .finishFirst:
+            a = UIAlertController(title: nil, message: AccountAsk.finishFirstLine, preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "OK", style: .cancel))
+        case .confirmSignOut:
+            a = UIAlertController(title: AccountCopy.signOutTitle, message: AccountCopy.signOutMessage(door), preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "Sign out", style: .destructive) { [weak self] _ in self?.leaveDoor() })
+            a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        case .confirmDelete:
+            a = UIAlertController(title: AccountCopy.deleteTitle, message: AccountCopy.deleteMessage, preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, let why = await self.deleteFriendAccount() else { return }
+                    let n = UIAlertController(title: nil, message: why, preferredStyle: .alert)
+                    n.addAction(UIAlertAction(title: "OK", style: .cancel))
+                    self.presentOrSkip(n) {}
+                }
+            })
+            a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        }
+        presentOrSkip(a) {}
     }
 
     /// The page asked for Virt's settings (its Account row).
@@ -902,6 +962,8 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         actions.append(("rest", { Engine.shared.startRest(seconds: 90) }))
         actions.append(("start", { Engine.shared.startToday() }))
         actions.append(("settings", { [weak self] in self?.showSettings() }))
+        // the page loaded again (the stand-in page can't reload itself: its address isn't really it)
+        actions.append(("reload", { [weak self] in self?.loadStart() }))
         let buttons = UIStackView(arrangedSubviews: actions.map { name, run -> UIButton in
             let b = UIButton(type: .system, primaryAction: UIAction(title: name) { _ in run() })
             b.accessibilityIdentifier = "dbg-\(name)"
@@ -934,6 +996,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             + " · door \(door?.rawValue ?? (doorsHost != nil ? "asking" : "none"))\(guest ? " guest" : "")"
             + " · page \(String((web?.url?.absoluteString ?? "none").prefix(48)))"
             + " · bundle \(BundleStore.shared.active?.version ?? "none")\(BundleStore.shared.note)"
+            + " · lock \(LockAfter(stored: UserDefaults.standard.string(forKey: LockAfter.key)).rawValue) · prefs sent \(PrefsHub.shared.sent)"
         view.bringSubviewToFront(l.superview ?? l)
     }
 }
@@ -948,6 +1011,14 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
         let friend = Navigation.isFriendOrigin(scheme: origin.protocol, host: origin.host, bundled: BundleMode.on)
         // any message from the page's main frame, even one Virt doesn't read, says the page is up (the bundle's start watch)
         if main { Task { @MainActor in (Engine.shared.page as? ShellController)?.bridgeSpoke() } }
+        // the You tab's settings, sign out and Delete account (VirtCore's AppRequest): only from Training's own main
+        // frame; a bad key or value is ignored, and none of these ever goes to the Engine
+        if AppRequest.isRequest(object: message.body) {
+            guard AppRequest.allowed(isMainFrame: main, scheme: origin.protocol, host: origin.host, bundled: BundleMode.on),
+                  let r = AppRequest.decode(object: message.body) else { return }
+            Task { @MainActor in (Engine.shared.page as? ShellController)?.pageAsked(r) }
+            return
+        }
         if main, BridgeMessage.isGuestSignIn(object: message.body), friend {
             Task { @MainActor in (Engine.shared.page as? ShellController)?.guestWantsSignIn() }
             return

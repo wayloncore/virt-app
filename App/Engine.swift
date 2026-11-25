@@ -142,7 +142,6 @@ import WidgetKit
         armQuietCheck()
         refreshReminders()
         maybeAskAboutReminders()
-        PrefsHub.shared.update()  // the reminders' line may have changed
         onChange?()
     }
 
@@ -170,6 +169,8 @@ import WidgetKit
 
     func refreshReminders() {
         Reminders.shared.refresh(today: today, workoutGoing: board.workout != nil)
+        // reminders on or off, from anywhere (the sheet, the page, the first-time ask): the page hears it
+        PrefsHub.shared.update()
         onChange?()
     }
 
