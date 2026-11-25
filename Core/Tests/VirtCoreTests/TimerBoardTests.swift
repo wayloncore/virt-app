@@ -283,9 +283,9 @@ final class TimerBoardTests: XCTestCase {
         b.apply(.workoutStart(title: "Legs A"), now: s(0))
         b.apply(.today(TodayInfo(title: "Legs A")), now: s(TimerBoard.quietLimit))
         XCTAssertEqual(b.lastMessageAt, s(0))
-        XCTAssertFalse(b.keepAwake(now: s(TimerBoard.quietLimit + 1)))
+        XCTAssertFalse(b.keepAwake(now: s(TimerBoard.quietLimit + 1), screen: .workout, screenSaidAt: s(0)))
         b.apply(.setLogged, now: s(TimerBoard.quietLimit + 2))
-        XCTAssertTrue(b.keepAwake(now: s(TimerBoard.quietLimit + 3)), "a logged set is")
+        XCTAssertTrue(b.keepAwake(now: s(TimerBoard.quietLimit + 3), screen: .workout, screenSaidAt: s(0)), "a logged set is")
         XCTAssertNotNil(b.workout)
     }
 
