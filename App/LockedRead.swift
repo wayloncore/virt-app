@@ -44,14 +44,27 @@ enum LockedRead {
     }
 
     /// Moves any item a locked phone couldn't read to "after first unlock, this phone only". Only while the phone is
-    /// unlocked (a "when unlocked" item can't be reached otherwise); nothing is deleted.
+    /// unlocked (a "when unlocked" item can't be reached otherwise); nothing is deleted. Off the main thread, so it
+    /// never slows a launch (the keychain can be slow just after the phone starts).
     @MainActor static func moveIfNeeded() {
-        guard UIApplication.shared.isProtectedDataAvailable else { return }
-        for i in items where LockedAccess.keychainNeedsMove(storedClass(i)) {
-            SecItemUpdate(query(i) as CFDictionary,
-                          [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly] as CFDictionary)
+        guard UIApplication.shared.isProtectedDataAvailable else {
+            #if DEBUG
+            recheck()
+            #endif
+            return
+        }
+        work.async {
+            for i in items where LockedAccess.keychainNeedsMove(storedClass(i)) {
+                SecItemUpdate(query(i) as CFDictionary,
+                              [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly] as CFDictionary)
+            }
+            #if DEBUG
+            check()
+            #endif
         }
     }
+
+    private static let work = DispatchQueue(label: "virt.locked-read", qos: .utility)
 
     /// UserDefaults' file and its protection class (nil: none set, as in the simulator).
     static func defaultsProtection() -> String? {
@@ -62,12 +75,24 @@ enum LockedRead {
         return (attrs?[.protectionKey] as? FileProtectionType)?.rawValue
     }
 
-    /// The test build's status line: "ok", or what a locked phone couldn't read. Also checks that VirtCore's class
-    /// name is the Security framework's own.
-    static var summary: String {
+    #if DEBUG
+    /// The test build's status line: "ok", or what a locked phone couldn't read ("checking" until the first check).
+    /// Also checks that VirtCore's class name is the Security framework's own. Worked out off the main thread and
+    /// kept, so the status line never waits on the keychain.
+    static var summary: String { lock.withLock { last } }
+    private static let lock = NSLock()
+    private static var last = "checking"
+
+    /// Works the summary out again (after a save), off the main thread.
+    static func recheck() { work.async { check() } }
+
+    private static func check() {
         let sameName = (kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String) == LockedAccess.keychainClass
         let s = LockedAccess.summary(keychain: items.map { ($0.name, storedClass($0)) },
                                      files: [("defaults", defaultsProtection())])
-        return sameName ? s : "class name \(kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)"
+        let out = sameName ? s : "class name \(kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)"
+        lock.withLock { last = out }
+        Task { @MainActor in Engine.shared.onChange?() }
     }
+    #endif
 }

@@ -142,6 +142,9 @@ import WidgetKit
         let changed = !t.samePlan(as: today)
         today = t
         SharedStore.saveToday(t)
+        #if DEBUG
+        LockedRead.recheck()
+        #endif
         if changed { WidgetCenter.shared.reloadAllTimelines() }
         pageScreen = t.workoutScreen
         pageScreenAt = t.receivedAt
