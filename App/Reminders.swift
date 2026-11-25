@@ -82,18 +82,20 @@ import VirtCore
     /// He said yes: turn them on, asking iOS for alerts if it hasn't been asked yet. If iOS has alerts off for Virt
     /// (he said no to its question once, or switched them off), iOS won't ask again, so `blocked` runs and the
     /// caller offers the way to Settings (Tyler, Nov 23: saying yes must actually lead to iOS allowing them).
-    func turnOn(blocked: (@MainActor () -> Void)? = nil) {
+    /// `finished` runs last, either way (the settings tell the page).
+    func turnOn(blocked: (@MainActor () -> Void)? = nil, finished: (@MainActor () -> Void)? = nil) {
         enabled = true
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             if settings.authorizationStatus == .denied {
-                Task { @MainActor in blocked?() }
+                Task { @MainActor in blocked?(); finished?() }
                 return
             }
             center.requestAuthorization(options: [.alert, .sound]) { ok, _ in
                 Task { @MainActor in
                     Engine.shared.refreshReminders()
                     if !ok { blocked?() }
+                    finished?()
                 }
             }
         }

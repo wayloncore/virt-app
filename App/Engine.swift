@@ -32,6 +32,8 @@ import WidgetKit
     private var activity: Activity<VirtTimerAttributes>?
     private var scheduled: [String: Date] = [:]
     private var scheduledStyle = SoundBoard.shared.style
+    /// Whether the scheduled alerts carry a sound (Sounds on), so turning it off or on schedules them again.
+    private var scheduledWithSound = SoundBoard.shared.enabled
     private var chimeTimer: Timer?
     private var tickTimers: [Timer] = []
     /// The zero whose sound has started (its identifier and end), so arming again never plays it twice.
@@ -45,6 +47,10 @@ import WidgetKit
     /// doesn't say.
     private var pageLive: Bool?
     private var pageLiveAt: Date?
+    /// Which screen the page says it's on (`screen` on `today`), and when it said it; nil from a page that doesn't say
+    /// (the screen then stays awake only while a countdown runs). Forgotten when a new page loads.
+    private var pageScreen: WorkoutScreen?
+    private var pageScreenAt: Date?
     /// The last copies kept on the phone, so they're written only when they change.
     private var keptBoard: TimerBoard.Snapshot?
     private var keptLive: LiveWorkout.Memory?
@@ -130,8 +136,13 @@ import WidgetKit
         today = t
         SharedStore.saveToday(t)
         if changed { WidgetCenter.shared.reloadAllTimelines() }
+        pageScreen = t.workoutScreen
+        pageScreenAt = t.receivedAt
+        applyAwake(now: Date())
+        armQuietCheck()
         refreshReminders()
         maybeAskAboutReminders()
+        PrefsHub.shared.update()  // the reminders' line may have changed
         onChange?()
     }
 
@@ -143,6 +154,8 @@ import WidgetKit
         queue = CommandQueue()
         pageLive = nil
         pageLiveAt = nil
+        pageScreen = nil
+        pageScreenAt = nil
         refresh()
         clearDeliveredTimerAlerts(everything: true)
         today = nil
@@ -200,7 +213,13 @@ import WidgetKit
     }
 
     /// A new page is loading in the web view: commands wait.
-    func pageLoading() { queue.pageLoading() }
+    func pageLoading() {
+        queue.pageLoading()
+        // the new page says its screen again on load; until then, the plain rule
+        pageScreen = nil
+        pageScreenAt = nil
+        applyAwake(now: Date())
+    }
 
     /// Training is up and listening: send what's waiting.
     func pageReady() { flush(queue.pageReady(now: Date())) }
@@ -216,6 +235,12 @@ import WidgetKit
             }
         }
         if !commands.isEmpty { onChange?() }
+    }
+
+    /// Sounds turned off or on: the alerts already scheduled are scheduled again, silent or with their sound.
+    func soundsChanged() {
+        scheduled = [:]
+        refresh()
     }
 
     /// The sound style changed: the alerts already scheduled get the new sound.
@@ -246,6 +271,20 @@ import WidgetKit
         refreshReminders()
         // Virt's open: no workout-timer alert stays on the Lock Screen or in Notification Center
         clearDeliveredTimerAlerts(everything: true)
+        // iOS's notification setting may have changed in Settings: the page hears the prefs again
+        PrefsHub.shared.cameForward()
+    }
+
+    // MARK: - The screen kept awake (only in the workout)
+
+    /// VirtCore's rule: on the workout screen when the page says which screen it's on; otherwise only while a
+    /// countdown runs.
+    func keepAwake(now: Date) -> Bool {
+        board.keepAwake(now: now, screen: pageScreen, screenSaidAt: pageScreenAt)
+    }
+
+    private func applyAwake(now: Date) {
+        UIApplication.shared.isIdleTimerDisabled = keepAwake(now: now)
     }
 
     // MARK: - Live workouts (the lock never asks during one)
@@ -287,7 +326,7 @@ import WidgetKit
         board.expireNative(now: now)
         scheduleAlerts(now: now)
         updateActivity(now: now)
-        UIApplication.shared.isIdleTimerDisabled = board.keepAwake(now: now)
+        applyAwake(now: now)
         armChime(now: now)
         armQuietCheck()
         keep(now: now)
@@ -323,6 +362,8 @@ import WidgetKit
         let center = UNUserNotificationCenter.current()
         let plan = board.alerts(now: now)
         if scheduledStyle != SoundBoard.shared.style { scheduledStyle = SoundBoard.shared.style; scheduled = [:] }
+        let withSound = SoundBoard.shared.enabled
+        if scheduledWithSound != withSound { scheduledWithSound = withSound; scheduled = [:] }
         let wanted = Set(plan.map(\.identifier))
         let gone = scheduled.keys.filter { !wanted.contains($0) }
         if !gone.isEmpty { center.removePendingNotificationRequests(withIdentifiers: gone) }
@@ -334,7 +375,8 @@ import WidgetKit
             let content = UNMutableNotificationContent()
             content.title = a.title
             content.body = a.body
-            content.sound = SoundBoard.shared.notificationSound(a.cue)
+            // Sounds off: quiet everywhere, the Lock Screen too (no sound means no buzz either)
+            content.sound = withSound ? SoundBoard.shared.notificationSound(a.cue) : nil
             content.interruptionLevel = .active
             // its own category and thread, apart from the reminders, and last in the list
             content.categoryIdentifier = TimerAlerts.category
@@ -425,11 +467,11 @@ import WidgetKit
 
     /// A workout the page never finished lets the screen sleep after a quiet spell; check once a minute while on.
     private func armQuietCheck() {
-        let on = board.workout != nil
+        let on = board.workout != nil || pageScreen == .workout
         if on && quietTimer == nil {
             quietTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
                 Task { @MainActor in
-                    UIApplication.shared.isIdleTimerDisabled = self.board.keepAwake(now: Date())
+                    self.applyAwake(now: Date())
                     // between sets, the activity goes once the workout's gone quiet
                     if self.board.countdown == nil { self.updateActivity(now: Date()) }
                 }
@@ -450,7 +492,8 @@ import WidgetKit
         if let c = board.countdown { parts.append("timer \(c.id) \(c.paused ? "paused" : "running")") } else { parts.append("timer none") }
         if let e = board.countdown?.endsAt { parts.append("ends at \(Int(e.timeIntervalSince1970.rounded()))") }
         parts.append("alerts \(board.alerts(now: now).count)")
-        parts.append(board.keepAwake(now: now) ? "awake on" : "awake off")
+        parts.append(keepAwake(now: now) ? "awake on" : "awake off")
+        if let s = pageScreen { parts.append("screen \(s.rawValue)") }
         parts.append("activity \(activityNote)")
         parts.append(board.workout.map { "workout \($0.title)" } ?? "no workout")
         parts.append("next \(board.nextSet?.label ?? "none")")
