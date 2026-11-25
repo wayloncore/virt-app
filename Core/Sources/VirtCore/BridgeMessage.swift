@@ -242,7 +242,7 @@ public enum BridgeMessage: Equatable, Sendable {
         var date: String?, title: String?, kind: String?, usualTime: String?
         var done: Bool?
         var minutes: Int?, weekDone: Int?, weekPlanned: Int?, streakWeeks: Int?, streak: Int?
-        var streakAtRisk: Bool?, streakAtRiskTomorrow: Bool?
+        var streakAtRisk: Bool?, streakAtRiskTomorrow: Bool?, live: Bool?
         var trainingDays: [Int]?
 
         init() {}
@@ -260,6 +260,7 @@ public enum BridgeMessage: Equatable, Sendable {
             streakWeeks = number(.streakWeeks); streak = number(.streak)
             streakAtRisk = (try? c.decodeIfPresent(Bool.self, forKey: .streakAtRisk)) ?? nil
             streakAtRiskTomorrow = (try? c.decodeIfPresent(Bool.self, forKey: .streakAtRiskTomorrow)) ?? nil
+            live = (try? c.decodeIfPresent(Bool.self, forKey: .live)) ?? nil
             if let list = (try? c.decodeIfPresent([Double].self, forKey: .trainingDays)) ?? nil {
                 trainingDays = list.filter { $0.isFinite }.map { Int($0) }
             }
@@ -267,13 +268,13 @@ public enum BridgeMessage: Equatable, Sendable {
 
         enum Key: String, CodingKey {
             case date, title, kind, usualTime, done, minutes, weekDone, weekPlanned, streakWeeks, trainingDays
-            case streak, streakAtRisk, streakAtRiskTomorrow
+            case streak, streakAtRisk, streakAtRiskTomorrow, live
         }
 
         var info: TodayInfo {
             TodayInfo(date: date, title: title, kind: kind, done: done, minutes: minutes, weekDone: weekDone,
                       weekPlanned: weekPlanned, streakWeeks: streakWeeks, trainingDays: trainingDays, usualTime: usualTime,
-                      streak: streak, streakAtRisk: streakAtRisk, streakAtRiskTomorrow: streakAtRiskTomorrow)
+                      streak: streak, streakAtRisk: streakAtRisk, streakAtRiskTomorrow: streakAtRiskTomorrow, live: live)
         }
     }
 }

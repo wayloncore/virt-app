@@ -12,11 +12,21 @@ struct VirtTimerAttributes: ActivityAttributes {
     var title: String
 }
 
-/// A lock-screen or Dynamic Island button. The system runs it in the app (a LiveActivityIntent), which updates the
-/// Live Activity at once and hands the command to the page as `kinetic:command`.
+/// A lock-screen or Dynamic Island button, and Control Center's Log set. The system runs it in the app (a
+/// LiveActivityIntent), in the background, which updates the Live Activity at once and hands the command to the page as
+/// `kinetic:command`.
+///
+/// It must work with the phone locked, the way a music app's buttons do (Tyler, Nov 24). So, said outright rather than
+/// left to the defaults: it runs while locked (`authenticationPolicy`), it never opens the app (`openAppWhenRun`, and
+/// on iOS 26 `supportedModes`), and what it runs (Engine.command) asks iOS for nothing and reads only what a locked
+/// phone allows after its first unlock (UserDefaults and the AfterFirstUnlock keychain copies).
 struct TimerCommandIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Timer button"
     static let isDiscoverable = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
+    static let openAppWhenRun: Bool = false
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes { .background }
 
     @Parameter(title: "Command") var command: String
 

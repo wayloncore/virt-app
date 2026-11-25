@@ -44,17 +44,29 @@ public enum SoundStyle: String, CaseIterable, Sendable {
 
     public var detail: String {
         switch self {
-        case .chime: return "Soft bells, rising for go and falling for rest"
-        case .digital: return "Clean tones: a rising run for go, a falling one for rest"
+        case .chime: return "A green light when a rest ends, a soft falling bell when work ends"
+        case .digital: return "A green light when a rest ends, a falling run of clean tones when work ends"
         case .classic: return "The first Virt chime"
         }
     }
 
+    /// How long before the zero a cue's sound starts, so its main tone lands on the zero: the green light's three short
+    /// tones play in the last 1.2 seconds (and they are its lead-in: no 3-2-1 ticks with it). 0 for every other sound.
+    public func lead(_ cue: SoundCue) -> TimeInterval { cue == .go && self != .classic ? Self.startLead : 0 }
+
     /// A stored value read back (an unknown one, from a newer Virt, falls back to the standard style).
     public init(stored: String?) { self = SoundStyle(rawValue: stored ?? "") ?? .standard }
 
+    /// The race-start "go" (Tyler, Nov 24: "a training green-light sound"): three short even tones, then one longer,
+    /// higher go tone. It's the sound when a rest ends in Chime and Digital, in the app and on the Lock Screen.
+    /// The bells it replaced (`virt-chime-go.caf`, `virt-digital-go.caf`) stay in the app for a rollback.
+    public static let startFile = "virt-start-go.caf"
+    /// Where the go tone starts in `startFile`: its three short tones come first, so the go tone lands on the zero.
+    public static let startLead: TimeInterval = 1.2
+
     /// The bundled file for a cue. Classic has one zero sound; its other cues use Chime's.
     public func file(_ cue: SoundCue) -> String {
+        if cue == .go && self != .classic { return Self.startFile }
         if self == .classic {
             return cue == .go || cue == .rest ? "virt-chime.wav" : SoundStyle.chime.file(cue)
         }
@@ -66,7 +78,9 @@ public enum SoundStyle: String, CaseIterable, Sendable {
 public enum LeadIn {
     public static let shortest: TimeInterval = 8
 
-    public static func ticks(zero: Date, now: Date, length: TimeInterval?) -> [Date] {
+    /// `lead`: the zero sound's own lead-in (SoundStyle.lead); with one, no ticks (they'd clash with its tones).
+    public static func ticks(zero: Date, now: Date, length: TimeInterval?, lead: TimeInterval = 0) -> [Date] {
+        if lead > 0 { return [] }
         if let l = length, l < shortest { return [] }
         return [3.0, 2.0, 1.0].map { zero.addingTimeInterval(-$0) }.filter { $0.timeIntervalSince(now) > 0.05 }
     }

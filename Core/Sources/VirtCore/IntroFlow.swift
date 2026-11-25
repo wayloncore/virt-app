@@ -36,6 +36,14 @@ public struct IntroFlow: Equatable, Sendable {
         stage = reduceMotion ? .lock : .launch
     }
 
+    /// A launch that opens straight into Training: no clip and no lock screen (a workout is live, or Lock after is
+    /// Never). `LockPolicy.lockedAtLaunch` decides.
+    public static func open(reduceMotion: Bool) -> IntroFlow {
+        var f = IntroFlow(reduceMotion: reduceMotion)
+        f.stage = .done
+        return f
+    }
+
     /// The launch clip reached its last frame, by playing or by a skip.
     public mutating func launchEnded() {
         guard stage == .launch else { return }

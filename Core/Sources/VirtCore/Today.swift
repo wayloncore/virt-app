@@ -30,23 +30,29 @@ public struct TodayInfo: Codable, Equatable, Sendable {
     public var streakAtRisk: Bool?
     /// The same, for tomorrow as things stand now, so the morning nudge can be set the night before (added, optional).
     public var streakAtRiskTomorrow: Bool?
+    /// A workout is open on the page right now (added field, optional; the website sends it on `today`). nil from a
+    /// page that doesn't say: Virt then falls back to its own 45-minute rule (`TimerBoard.midWorkout`).
+    public var live: Bool?
     /// When Virt got it (Virt's own field, not the page's).
     public var receivedAt: Date?
 
     public init(date: String? = nil, title: String? = nil, kind: String? = nil, done: Bool? = nil, minutes: Int? = nil,
                 weekDone: Int? = nil, weekPlanned: Int? = nil, streakWeeks: Int? = nil, trainingDays: [Int]? = nil,
                 usualTime: String? = nil, streak: Int? = nil, streakAtRisk: Bool? = nil,
-                streakAtRiskTomorrow: Bool? = nil, receivedAt: Date? = nil) {
+                streakAtRiskTomorrow: Bool? = nil, receivedAt: Date? = nil, live: Bool? = nil) {
         self.date = date; self.title = title; self.kind = kind; self.done = done; self.minutes = minutes
         self.weekDone = weekDone; self.weekPlanned = weekPlanned; self.streakWeeks = streakWeeks
         self.trainingDays = trainingDays; self.usualTime = usualTime; self.receivedAt = receivedAt
         self.streak = streak; self.streakAtRisk = streakAtRisk; self.streakAtRiskTomorrow = streakAtRiskTomorrow
+        self.live = live
     }
 
-    /// The same plan, ignoring when it arrived (to tell whether anything changed).
+    /// The same plan, ignoring when it arrived and whether a workout is open (to tell whether the widgets need drawing
+    /// again).
     public func samePlan(as other: TodayInfo?) -> Bool {
         guard var o = other else { return false }
         o.receivedAt = receivedAt
+        o.live = live
         return o == self
     }
 

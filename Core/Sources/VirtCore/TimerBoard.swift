@@ -406,3 +406,98 @@ public struct TimerBoard: Equatable, Sendable {
         return next.isEmpty ? "Go" : "Go: \(next)"
     }
 }
+
+// MARK: - Kept on the phone
+
+/// The board, kept on the phone (UserDefaults, `Snapshot.key`, a new key) each time it changes, so a lock-screen
+/// button that wakes Virt after iOS ended it (a fresh process, in the background) still knows the workout: Log set
+/// logs the right set, and the Live Activity isn't ended for want of a workout.
+///
+/// Saved-data rule: fields are only ever added, every new one optional. A copy that can't be read is simply no copy.
+extension TimerBoard {
+    public struct Snapshot: Codable, Equatable, Sendable {
+        public static let key = "virt.board"
+
+        public struct Later: Codable, Equatable, Sendable {
+            public var id: String
+            public var kind: String
+            public var label: String
+            public var endsAt: Date?
+            /// Seconds after the running countdown's end.
+            public var after: TimeInterval
+        }
+
+        public struct Clock: Codable, Equatable, Sendable {
+            public var id: String
+            public var kind: String
+            public var label: String
+            public var next: String
+            public var startedAt: Date
+            public var endsAt: Date?
+            public var remaining: TimeInterval?
+            public var paused: Bool
+            public var stopwatch: Bool
+            public var pausedAt: Date?
+            public var pausedTotal: TimeInterval
+            public var progressFrom: Date
+            public var total: TimeInterval?
+            public var upcoming: [Later]?
+        }
+
+        public var workoutTitle: String?
+        public var workoutStartedAt: Date?
+        public var countdown: Clock?
+        public var lastMessageAt: Date?
+        public var lastButtonAt: Date?
+        public var lastEndID: String?
+        public var lastEndAt: Date?
+        public var nextSet: NextSet?
+        public var justLogged: NextSet?
+
+        public func encoded() -> Data? { try? JSONEncoder().encode(self) }
+        public static func decode(_ data: Data?) -> Snapshot? { data.flatMap { try? JSONDecoder().decode(Snapshot.self, from: $0) } }
+    }
+
+    public var snapshot: Snapshot {
+        var s = Snapshot()
+        s.workoutTitle = workout?.title
+        s.workoutStartedAt = workout?.startedAt
+        if let c = countdown {
+            s.countdown = Snapshot.Clock(
+                id: c.id, kind: c.kind.rawValue, label: c.label, next: c.next, startedAt: c.startedAt, endsAt: c.endsAt,
+                remaining: c.remaining, paused: c.paused, stopwatch: c.stopwatch, pausedAt: c.pausedAt,
+                pausedTotal: c.pausedTotal, progressFrom: c.progressFrom, total: c.total,
+                upcoming: c.upcoming.map { Snapshot.Later(id: $0.step.id, kind: $0.step.kind.rawValue, label: $0.step.label,
+                                                          endsAt: $0.step.endsAt, after: $0.after) })
+        }
+        s.lastMessageAt = lastMessageAt
+        s.lastButtonAt = lastButtonAt
+        s.lastEndID = lastEnd?.id
+        s.lastEndAt = lastEnd?.at
+        s.nextSet = nextSet
+        s.justLogged = justLogged
+        return s
+    }
+
+    /// The board a kept copy describes, if it still matters at `now` (a workout going by `midWorkout`, or a countdown
+    /// that hasn't reached zero); otherwise a fresh board, so an old copy never keeps a finished workout alive.
+    public static func restored(from s: Snapshot?, now: Date) -> TimerBoard {
+        guard let s else { return TimerBoard() }
+        var b = TimerBoard()
+        if let t = s.workoutTitle, let at = s.workoutStartedAt { b.workout = Workout(title: t, startedAt: at) }
+        if let c = s.countdown {
+            b.countdown = Countdown(
+                id: c.id, kind: TimerKind(c.kind), label: c.label, next: c.next, startedAt: c.startedAt, endsAt: c.endsAt,
+                remaining: c.remaining, paused: c.paused, stopwatch: c.stopwatch, pausedAt: c.pausedAt,
+                pausedTotal: c.pausedTotal, progressFrom: c.progressFrom, total: c.total,
+                upcoming: (c.upcoming ?? []).map { (step: Step(id: $0.id, kind: TimerKind($0.kind), label: $0.label, endsAt: $0.endsAt),
+                                                     after: $0.after) })
+        }
+        b.lastMessageAt = s.lastMessageAt
+        b.lastButtonAt = s.lastButtonAt
+        if let id = s.lastEndID, let at = s.lastEndAt { b.lastEnd = (id, at) }
+        b.nextSet = s.nextSet
+        b.justLogged = s.justLogged
+        return b.midWorkout(now: now) ? b : TimerBoard()
+    }
+}

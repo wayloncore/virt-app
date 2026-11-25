@@ -9,8 +9,9 @@ public enum PageCommand: Equatable, Sendable {
     case startToday
     /// Start a rest timer of this many seconds.
     case rest(seconds: Int)
-    /// Log the next set, as if tapped at `at` (wayloncore/tyleralocke#573).
-    case log(at: Date)
+    /// Log the next set, as if tapped at `at` (wayloncore/tyleralocke#573). `id` is the press's own (added: the page
+    /// drops a `log` whose id it has already seen); nil sends the old shape.
+    case log(at: Date, id: String? = nil)
 
     /// The JavaScript that hands it to the page.
     public var script: String {
@@ -20,10 +21,23 @@ public enum PageCommand: Equatable, Sendable {
             return "window.dispatchEvent(new CustomEvent('kinetic:command', { detail: 'startToday' }));"
         case .rest(let s):
             return "window.dispatchEvent(new CustomEvent('kinetic:command', { detail: { command: 'rest', seconds: \(s) } }));"
-        case .log(let at):
+        case .log(let at, let id):
             let ms = Int((at.timeIntervalSince1970 * 1000).rounded())
-            return "window.dispatchEvent(new CustomEvent('kinetic:command', { detail: { command: 'log', at: \(ms) } }));"
+            let safe = id.map(Self.safeID) ?? ""
+            let idPart = safe.isEmpty ? "" : ", id: '\(safe)'"
+            return "window.dispatchEvent(new CustomEvent('kinetic:command', { detail: { command: 'log', at: \(ms)\(idPart) } }));"
         }
+    }
+
+    /// A press id as it goes into the script: plain letters, digits and dashes only (at most 64), so it can never break
+    /// out of its quotes.
+    static func safeID(_ id: String) -> String {
+        var out = ""
+        for u in id.unicodeScalars where u.isASCII && (CharacterSet.alphanumerics.contains(u) || u == "-") {
+            out.unicodeScalars.append(u)
+            if out.unicodeScalars.count >= 64 { break }
+        }
+        return out
     }
 }
 
