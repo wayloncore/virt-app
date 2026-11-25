@@ -251,13 +251,20 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
 
     /// The scripts each page gets before its own run: Virt's start hint, and on a friend's door the session handed
     /// to train.time2play.live and the watch for its "Sign out here".
+    /// The settings the start script carries now, and whether a change is waiting for a load to finish.
+    private var installedPrefs: AppPrefs?
+    private var prefsStale = false
+
     private func installScripts() {
         guard bound else { return }
         let ucc = web.configuration.userContentController
         ucc.removeAllUserScripts()
         // with Virt's settings for the You tab (kineticApp.prefs); installed again whenever one changes, so every load
         // starts with the current values
-        ucc.addUserScript(WKUserScript(source: PageStart.script(build: BundleStore.shared.build, prefs: PrefsHub.shared.current),
+        let prefs = PrefsHub.shared.current
+        installedPrefs = prefs
+        prefsStale = false
+        ucc.addUserScript(WKUserScript(source: PageStart.script(build: BundleStore.shared.build, prefs: prefs),
                                        injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let bundled = self.bundled
         // bundled: the page is told where its API is, and the session goes to the bundle's own page as well
@@ -513,7 +520,12 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
     /// A setting changed (the sheet, the page, or iOS's notification setting): the next load starts with it, and the
     /// page showing now hears `kinetic:prefs`.
     func prefsChanged(_ prefs: AppPrefs) {
-        installScripts()
+        // The start scripts are put back only when a value really changed, and never while a page is loading: taking
+        // them out and putting them in again mid-load can leave that page without its session or its sign-out watch.
+        // A change during a load waits for the load to finish (didFinish).
+        if prefs != installedPrefs {
+            if web.isLoading { prefsStale = true } else { installScripts() }
+        }
         guard onTraining, doorsHost == nil else { return }
         web.evaluateJavaScript(prefs.eventScript) { _, _ in }
         updateStatusLine()
@@ -848,6 +860,11 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         refresher.endRefreshing()
         hideSplash()
         matchStatusBar()
+        // a setting changed while this page was loading: the next load starts with it, and this page hears it now
+        if prefsStale {
+            installScripts()
+            if onTraining, doorsHost == nil { web.evaluateJavaScript(PrefsHub.shared.current.eventScript) { _, _ in } }
+        }
         updateStatusLine()
         // Training listens for commands once its scripts have run; a message from the page says so sooner
         readyWork?.cancel()
