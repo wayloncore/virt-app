@@ -239,7 +239,7 @@ public enum BridgeMessage: Equatable, Sendable {
 
     /// `today`, read leniently: a field of the wrong type is skipped instead of losing the whole message.
     private struct RawToday: Decodable {
-        var date: String?, title: String?, kind: String?, usualTime: String?
+        var date: String?, title: String?, kind: String?, usualTime: String?, screen: String?
         var done: Bool?
         var minutes: Int?, weekDone: Int?, weekPlanned: Int?, streakWeeks: Int?, streak: Int?
         var streakAtRisk: Bool?, streakAtRiskTomorrow: Bool?, live: Bool?
@@ -255,6 +255,7 @@ public enum BridgeMessage: Equatable, Sendable {
                 return Int(d.rounded())
             }
             date = text(.date); title = text(.title); kind = text(.kind); usualTime = text(.usualTime)
+            screen = text(.screen)
             if let b = (try? c.decodeIfPresent(Bool.self, forKey: .done)) ?? nil { done = b } else { done = number(.done).map { $0 != 0 } }
             minutes = number(.minutes); weekDone = number(.weekDone); weekPlanned = number(.weekPlanned)
             streakWeeks = number(.streakWeeks); streak = number(.streak)
@@ -268,13 +269,13 @@ public enum BridgeMessage: Equatable, Sendable {
 
         enum Key: String, CodingKey {
             case date, title, kind, usualTime, done, minutes, weekDone, weekPlanned, streakWeeks, trainingDays
-            case streak, streakAtRisk, streakAtRiskTomorrow, live
+            case streak, streakAtRisk, streakAtRiskTomorrow, live, screen
         }
 
         var info: TodayInfo {
             TodayInfo(date: date, title: title, kind: kind, done: done, minutes: minutes, weekDone: weekDone,
                       weekPlanned: weekPlanned, streakWeeks: streakWeeks, trainingDays: trainingDays, usualTime: usualTime,
-                      streak: streak, streakAtRisk: streakAtRisk, streakAtRiskTomorrow: streakAtRiskTomorrow, live: live)
+                      streak: streak, streakAtRisk: streakAtRisk, streakAtRiskTomorrow: streakAtRiskTomorrow, live: live, screen: screen)
         }
     }
 }

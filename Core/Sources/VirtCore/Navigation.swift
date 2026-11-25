@@ -13,6 +13,8 @@ import Foundation
 /// (a video, a check box) load where they are.
 public enum Navigation {
     public static let home = URL(string: "https://studio.tyleralocke.com/training")!
+    /// Studio Training's host (Tyler's door).
+    public static let studioHost = "studio.tyleralocke.com"
     /// Training for friends (#578): the website's own Training screens on the friend's data.
     public static let friendHost = "train.time2play.live"
     public static let friendHome = URL(string: "https://\(friendHost)/")!

@@ -33,19 +33,26 @@ public struct TodayInfo: Codable, Equatable, Sendable {
     /// A workout is open on the page right now (added field, optional; the website sends it on `today`). nil from a
     /// page that doesn't say: Virt then falls back to its own 45-minute rule (`TimerBoard.midWorkout`).
     public var live: Bool?
+    /// Which screen the page is on right now, "workout" or "other" (added field, optional; asked of the website for
+    /// the screen-awake rule). nil from a page that doesn't say. Kept as text; read it with `workoutScreen`.
+    public var screen: String?
     /// When Virt got it (Virt's own field, not the page's).
     public var receivedAt: Date?
 
     public init(date: String? = nil, title: String? = nil, kind: String? = nil, done: Bool? = nil, minutes: Int? = nil,
                 weekDone: Int? = nil, weekPlanned: Int? = nil, streakWeeks: Int? = nil, trainingDays: [Int]? = nil,
                 usualTime: String? = nil, streak: Int? = nil, streakAtRisk: Bool? = nil,
-                streakAtRiskTomorrow: Bool? = nil, receivedAt: Date? = nil, live: Bool? = nil) {
+                streakAtRiskTomorrow: Bool? = nil, receivedAt: Date? = nil, live: Bool? = nil, screen: String? = nil) {
         self.date = date; self.title = title; self.kind = kind; self.done = done; self.minutes = minutes
         self.weekDone = weekDone; self.weekPlanned = weekPlanned; self.streakWeeks = streakWeeks
         self.trainingDays = trainingDays; self.usualTime = usualTime; self.receivedAt = receivedAt
         self.streak = streak; self.streakAtRisk = streakAtRisk; self.streakAtRiskTomorrow = streakAtRiskTomorrow
         self.live = live
+        self.screen = screen
     }
+
+    /// `screen`, read: nil when the page didn't say, or said something this Virt doesn't know.
+    public var workoutScreen: WorkoutScreen? { screen.flatMap(WorkoutScreen.init(rawValue:)) }
 
     /// The same plan, ignoring when it arrived and whether a workout is open (to tell whether the widgets need drawing
     /// again).
@@ -53,6 +60,7 @@ public struct TodayInfo: Codable, Equatable, Sendable {
         guard var o = other else { return false }
         o.receivedAt = receivedAt
         o.live = live
+        o.screen = screen
         return o == self
     }
 
@@ -115,6 +123,14 @@ public struct TodayInfo: Codable, Equatable, Sendable {
     }
 
     var validDays: [Int]? { trainingDays.map { Array(Set($0.filter { (0...6).contains($0) })).sorted() } }
+}
+
+/// Which screen Training is showing, from `today`'s optional `screen`.
+public enum WorkoutScreen: String, Sendable {
+    /// The workout screen itself (the Active Workout).
+    case workout
+    /// Today, the other tabs, anything but the workout screen.
+    case other
 }
 
 /// The next workout: today's if it's still to do, or the next training day.

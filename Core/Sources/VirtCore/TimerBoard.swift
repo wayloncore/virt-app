@@ -337,11 +337,34 @@ public struct TimerBoard: Equatable, Sendable {
         return d.current(at: now)
     }
 
-    /// Keep the screen on while a timer is up, or while a workout is going and the page has spoken recently.
-    public func keepAwake(now: Date) -> Bool {
-        if countdown != nil { return true }
-        guard workout != nil, let last = lastMessageAt else { return false }
-        return now.timeIntervalSince(last) < Self.quietLimit
+    /// Whether the screen stays awake (Nov 25: only in the workout, for the battery). The page keeps a workout live
+    /// while he walks around the other tabs, so a workout going is no longer enough.
+    ///
+    /// - The page says which screen it's on (`screen` on `today`): awake only on the workout screen, while a countdown
+    ///   runs there, or while there's been a sign of the workout within `quietLimit` (a page message, a lock-screen
+    ///   button, the page saying it's on the workout screen), so a phone left on the workout screen still sleeps.
+    ///   Any other screen: never.
+    /// - A page that doesn't say: awake only while a countdown is running (`countdownRunning`).
+    public func keepAwake(now: Date, screen: WorkoutScreen? = nil, screenSaidAt: Date? = nil) -> Bool {
+        switch screen {
+        case nil: return countdownRunning(now: now)
+        case .other?: return false
+        case .workout?:
+            if countdownRunning(now: now) { return true }
+            guard let last = [lastMessageAt, lastButtonAt, screenSaidAt].compactMap({ $0 }).max() else { return false }
+            let since = now.timeIntervalSince(last)
+            return since >= 0 && since < Self.quietLimit
+        }
+    }
+
+    /// A countdown is running: not paused, and a hold counting up, or a zero still ahead (its own, or one planned
+    /// after it). A countdown past its last zero with the page asleep isn't running.
+    public func countdownRunning(now: Date) -> Bool {
+        guard let c = countdown, !c.paused else { return false }
+        if c.stopwatch { return true }
+        guard let e = c.endsAt else { return false }
+        if e > now { return true }
+        return c.upcoming.contains { e.addingTimeInterval($0.after) > now }
     }
 
     /// True while a workout is going, so coming back to the app doesn't ask for Face ID (`LockPolicy`): a countdown is

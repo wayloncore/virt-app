@@ -346,12 +346,15 @@ public enum PageStart {
     /// Tells Training it's in Virt: Virt plays the lead-in, zero, set and finish sounds itself, has its own settings
     /// sheet, which app build this is (for the page's "Update Virt" card), and `bundled: true` when the page was
     /// served from inside the app. Also asks WebKit to mix the page's own sounds with his music.
-    public static func script(build: Int) -> String {
-        """
+    /// `prefs`: Virt's settings for the You tab (`AppPrefs`), as `kineticApp.prefs`. That object itself isn't frozen:
+    /// each `kinetic:prefs` event brings it up to date in place. Without it, the script is exactly as before.
+    public static func script(build: Int, prefs: AppPrefs? = nil) -> String {
+        let prefsLine = prefs.map { "\n    app.prefs = \($0.json);" } ?? ""
+        return """
         (() => {
           try {
             const app = { app: 'virt', version: 2, sounds: ['lead-in', 'zero', 'set', 'finish'], settings: true, build: \(build) };
-            if (location.protocol === '\(Navigation.bundleScheme):') app.bundled = true;
+            if (location.protocol === '\(Navigation.bundleScheme):') app.bundled = true;\(prefsLine)
             window.kineticApp = Object.freeze(app);
           } catch (e) {}
           try { if (navigator.audioSession && navigator.audioSession.type === 'auto') navigator.audioSession.type = 'ambient'; } catch (e) {}
