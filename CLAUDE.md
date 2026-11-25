@@ -146,10 +146,16 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   only while a countdown is running.
 
 ## Lock-screen buttons, alerts and the lock (Nov 24)
-- The Live Activity's buttons and Control Center's Log set are `TimerCommandIntent`, a `LiveActivityIntent` that says
-  outright it runs while locked (`authenticationPolicy = .alwaysAllowed`), never opens the app (`openAppWhenRun =
-  false`; iOS 26 `supportedModes = .background`), and touches only what a locked phone allows after its first unlock.
-  It never asks iOS for alert permission: that's asked while Virt is open, when the first workout starts.
+- The Live Activity's buttons and Control Center's Log set are `TimerCommandIntent`, a `LiveActivityIntent` and an
+  `AudioPlaybackIntent` (the kind music apps' lock-screen buttons use; Nov 25) that says outright it runs while locked
+  (`authenticationPolicy = .alwaysAllowed`), never opens the app (`openAppWhenRun = false`; iOS 26 `supportedModes =
+  .background`), and touches only what a locked phone allows after its first unlock (keychain copies "after first
+  unlock, this phone only", moved at launch if not: `App/LockedRead.swift`, VirtCore's `LockedAccess`). It never asks
+  iOS for alert permission: that's asked while Virt is open, when the first workout starts. Every reason iOS could ask
+  for an unlock, with Apple's words, is in `docs/lock-screen-buttons.md`; VirtCore's `LockScreenButtonsTests` reads
+  every button's intent from the source and fails if any of this goes.
+- A Log set press with no page to hand it to (iOS started Virt just for the press, or Training was loading) is held on
+  the phone (`PendingLogs`, `virt.pending.logs`) and handed over when the page is up, with its moment and id.
 - Workout-timer alerts: iOS plays a notification's sound only with words to show, so each zero is still a quiet
   notification (category and thread `virt.timer`), but Virt takes the delivered ones away every time it runs, all of
   them when it comes forward or the workout ends (`TimerAlerts`); reminders are never touched. While Virt is open

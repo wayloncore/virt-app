@@ -41,6 +41,10 @@ enum RestLength: String, AppEnum {
 struct RestTimerIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Start a rest timer"
     static let description = IntentDescription("Starts a rest countdown in Virt, with the timer on the Lock Screen and an alert at zero. 90 seconds unless you choose.")
+    /// From the Action button or Siri with the phone locked: runs without an unlock, and never opens the app
+    /// (docs/lock-screen-buttons.md).
+    static let authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
+    static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Seconds", description: "How long to rest, in seconds (5 to 1800).")
     var seconds: Int?
@@ -81,3 +85,31 @@ struct VirtShortcuts: AppShortcutsProvider {
         ], shortTitle: "Rest timer", systemImageName: "hourglass")
     }
 }
+
+#if DEBUG
+/// The test build's check of every intent a lock-screen button, Control Center or the Action button runs while the
+/// phone may be locked, read from the real types (VirtCore's LockScreenButtonsTests reads their source on Linux):
+/// "ok", or what's wrong. The UI tests read it from the status line.
+enum IntentAudit {
+    /// The Live Activity's buttons and Control Center's Log set: the kind of intent music apps' buttons use.
+    static let buttons: [any AppIntent.Type] = [TimerCommandIntent.self]
+    /// Siri and the Action button's rest timer: runs locked too, but isn't a button.
+    static let locked: [any AppIntent.Type] = [TimerCommandIntent.self, RestTimerIntent.self]
+
+    static var summary: String {
+        var problems: [String] = []
+        for t in locked {
+            let name = String(describing: t)
+            if t.authenticationPolicy != .alwaysAllowed { problems.append("\(name) asks to unlock") }
+            if t.openAppWhenRun { problems.append("\(name) opens the app") }
+            if !(t is any LiveActivityIntent.Type) { problems.append("\(name) not a LiveActivityIntent") }
+        }
+        for t in buttons where !(t is any AudioPlaybackIntent.Type) {
+            problems.append("\(String(describing: t)) not an AudioPlaybackIntent")
+        }
+        // every button the Live Activity draws is one of these
+        for c in TimerCommand.allCases where TimerCommandIntent(c).command != c.rawValue { problems.append("button \(c.rawValue)") }
+        return problems.isEmpty ? "ok" : problems.joined(separator: ",")
+    }
+}
+#endif
