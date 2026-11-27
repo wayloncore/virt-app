@@ -1,12 +1,11 @@
 import AVFoundation
 import UIKit
-import UserNotifications
 import VirtCore
 
 /// Virt's own sounds while the app is open: the soft 3-2-1 ticks, the zero chime (rising when a rest ends, falling
 /// when work ends), a tiny click when a set is logged, and a warm finish. All short and quiet, and they mix with his
 /// music: plain ambient sound normally; at zero, with music playing, the music ducks for the chime and comes back.
-/// The lock-screen sound keeper (BackgroundSound) and the fallback alerts use the same zero sounds.
+/// The lock-screen sound keeper (BackgroundSound) plays the same zero sounds.
 ///
 /// Settings (Virt's settings sheet; saved-data rule: new keys only): `sounds.enabled` (on unless turned off) and
 /// `sounds.style` (SoundStyle's raw value).
@@ -39,12 +38,7 @@ import VirtCore
         for cue in SoundCue.allCases { _ = player(cue, style: style) }
     }
 
-    /// The lock-screen alert's sound for a zero: the same file the app plays.
-    func notificationSound(_ cue: SoundCue) -> UNNotificationSound {
-        UNNotificationSound(named: UNNotificationSoundName(style.file(cue)))
-    }
-
-    /// Plays a cue now (only while the app is open; the alerts sound with it locked).
+    /// Plays a cue now (only while the app is open; the sound keeper plays the zeros with it locked).
     func play(_ cue: SoundCue, style: SoundStyle? = nil, force: Bool = false) {
         guard force || (enabled && UIApplication.shared.applicationState == .active) else { return }
         let st = style ?? self.style

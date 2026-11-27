@@ -1,8 +1,8 @@
 import XCTest
 @testable import VirtCore
 
-/// The zero sound with the phone locked and no banner (Tyler, Nov 27): when the sound keeper runs, which zeros it
-/// plays and when, and when a notification sounds instead.
+/// The zero sound with the phone locked and no notification (Tyler, Nov 27): when the sound keeper runs, which zeros
+/// it plays and when, and that no timer notification is left waiting.
 final class SoundKeeperTests: XCTestCase {
     let t0 = Date(timeIntervalSince1970: 1_795_021_200)
     func s(_ n: TimeInterval) -> Date { t0.addingTimeInterval(n) }
@@ -78,28 +78,12 @@ final class SoundKeeperTests: XCTestCase {
         XCTAssertTrue(SoundKeeper.cues(board: p, style: .digital, now: s(10)).isEmpty)
     }
 
-    func testANotificationOnlyWhenTheKeeperIsNotPlayingIt() {
-        // keeper playing: the notification is the safety net until the hand-off, then taken back
-        XCTAssertEqual(SoundKeeper.alert(soundAt: s(90), now: s(10), soundsOn: true, keeper: .on), .schedule)
-        XCTAssertEqual(SoundKeeper.alert(soundAt: s(90), now: s(90 - SoundKeeper.handOff), soundsOn: true, keeper: .on), .handOff)
-        XCTAssertEqual(SoundKeeper.alert(soundAt: s(90), now: s(89), soundsOn: true, keeper: .on), .handOff)
-        // no keeper, interrupted or failed: the notification sounds (words and sound), never silent
-        for k in [SoundKeeper.State.off, .interrupted, .failed] {
-            XCTAssertEqual(SoundKeeper.alert(soundAt: s(90), now: s(89), soundsOn: true, keeper: k), .schedule, k.rawValue)
-        }
-        // Sounds off: nothing, whatever the keeper
-        for k in [SoundKeeper.State.off, .on, .interrupted, .failed] {
-            XCTAssertEqual(SoundKeeper.alert(soundAt: s(90), now: s(10), soundsOn: false, keeper: k), SoundKeeper.Alert.none, k.rawValue)
-        }
-    }
-
-    func testTheNextHandOff() {
-        let cues = SoundKeeper.cues(board: resting(), style: .chime, now: s(5))
-        XCTAssertEqual(SoundKeeper.nextHandOff(cues: cues, now: s(5), keeper: .on), s(90 - SoundStyle.startLead - SoundKeeper.handOff))
-        XCTAssertNil(SoundKeeper.nextHandOff(cues: cues, now: s(5), keeper: .interrupted), "no keeper, no hand-off")
-        XCTAssertNil(SoundKeeper.nextHandOff(cues: cues, now: s(88), keeper: .on), "already handed off")
+    func testNoTimerNotificationIsLeftWaiting() {
+        let pending = ["virt.timer.rest:0", "virt.reminder.2026-11-28", "virt.timer.int:1", "something-else"]
+        XCTAssertEqual(TimerAlerts.pendingToRemove(pending), ["virt.timer.rest:0", "virt.timer.int:1"], "reminders stay")
         XCTAssertTrue(SoundKeeper.State.on.covers)
         XCTAssertFalse(SoundKeeper.State.interrupted.covers)
+        XCTAssertFalse(SoundKeeper.State.failed.covers)
     }
 
     /// The pieces the app needs for it, read from the source (a Mac build is what proves they compile).
@@ -114,8 +98,10 @@ final class SoundKeeperTests: XCTestCase {
         let spec = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
         XCTAssertTrue(spec.contains("UIBackgroundModes: [audio]"))
         let engine = try String(contentsOf: root.appendingPathComponent("App/Engine.swift"), encoding: .utf8)
-        XCTAssertTrue(engine.contains("content.title = a.title") && engine.contains("content.body = a.body"),
-                      "the fallback notification has words, so iOS plays its sound")
+        XCTAssertFalse(engine.contains("UNMutableNotificationContent"), "a timer zero never schedules a notification (Tyler, Nov 27)")
+        XCTAssertFalse(engine.contains("requestAuthorization"), "a workout never asks for notification permission")
+        let reminders = try String(contentsOf: root.appendingPathComponent("App/Reminders.swift"), encoding: .utf8)
+        XCTAssertTrue(reminders.contains("requestAuthorization"), "only turning on the reminders asks")
         XCTAssertTrue(engine.contains("BackgroundSound.shared.covers(key)"), "the app's own chime never doubles the keeper's")
     }
 }

@@ -2,7 +2,7 @@
 
 Virt: Tyler's private iPhone app for his own workout Training, and (#578, Training for friends) his friends' too. A native shell around studio Training
 (studio.tyleralocke.com/training: the same screens and data, so the website stays the backup), plus the native
-pieces the web can't do well: alerts at the exact zero with the phone locked, the timer on the lock screen and in the
+pieces the web can't do well: the zero sound at the exact moment with the phone locked, the timer on the lock screen and in the
 Dynamic Island (a Live Activity), and the screen kept awake during a workout. iPhone only (no iPad, no Watch yet).
 How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralocke); it applies here too.
 
@@ -120,8 +120,8 @@ Log set (#573): Virt reads `set.next` (and `nextSet` on `timer.start`), the open
 Log set; Log set starts the set's rest at once and shows the following set, since the page may be asleep
 (`TimerBoard.logSet`). The same intent is a Control Center control (`LogSetControl`, iOS 18, in the widget extension).
 Virt already reads an optional
-`upcoming` list on `timer.start` (the steps after this one, each `{ id, kind, label, endsAt }`) and schedules an alert
-at each of their zeros; until the page sends it, only the running step's zero sounds while the phone is locked.
+`upcoming` list on `timer.start` (the steps after this one, each `{ id, kind, label, endsAt }`) and the sound keeper
+plays each of their zeros; until the page sends it, only the running step's zero sounds while the phone is locked.
 One press is one set (Nov 24, VirtCore's `LogPress`): presses within 0.6 s count once, nothing is sent when Virt's
 board has no next set, and each `log` carries its own `id` (`{ command: 'log', at, id }`, additive) so the page can drop
 a repeat. The board is kept on the phone (`virt.board` in UserDefaults) so a press that wakes Virt after iOS ended it
@@ -139,8 +139,8 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   `{ type: 'openNotificationSettings' }`, `{ type: 'deleteAccount' }` (the sheet's own confirmation still asks; a
   friend's door only, never a guest) and `{ type: 'signOut' }` (the sheet's confirmation; waits during a workout).
   Unknown keys and values are ignored; only from Training's own main frame. Virt's sheet stays, on the same values.
-- Sounds off is quiet everywhere Virt controls: no sound in the app, no sound keeper, and no timer alerts on the Lock
-  Screen (so no buzz either). The reminders keep iOS's sound.
+- Sounds off is quiet everywhere Virt controls: no sound in the app and no sound keeper (so nothing on the Lock
+  Screen either). The reminders keep iOS's sound.
 - The screen stays awake only in the workout (`TimerBoard.keepAwake`): `today` may carry `screen: 'workout'|'other'`;
   with it, awake only on the workout screen (a countdown, or a sign of the workout within 45 minutes); without it,
   only while a countdown is running.
@@ -151,37 +151,39 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   (`authenticationPolicy = .alwaysAllowed`), never opens the app (`openAppWhenRun = false`; iOS 26 `supportedModes =
   .background`), and touches only what a locked phone allows after its first unlock (keychain copies "after first
   unlock, this phone only", moved at launch if not: `App/LockedRead.swift`, VirtCore's `LockedAccess`). It never asks
-  iOS for alert permission: that's asked while Virt is open, when the first workout starts. Every reason iOS could ask
+  iOS for alert permission. Nothing in a workout does (the timer has no notifications); only turning on the reminders
+  asks (`Reminders.turnOn`), with Virt open. Every reason iOS could ask
   for an unlock, with Apple's words, is in `docs/lock-screen-buttons.md`; VirtCore's `LockScreenButtonsTests` reads
   every button's intent from the source and fails if any of this goes.
 - A Log set press with no page to hand it to (iOS started Virt just for the press, or Training was loading) is held on
   the phone (`PendingLogs`, `virt.pending.logs`) and handed over when the page is up, with its moment and id.
-- The zero sound with the phone locked, no banner (Tyler, Nov 27; `App/BackgroundSound.swift`, VirtCore's
-  `SoundKeeper`). iOS plays a notification's sound only with words to show (build 90's sound-only alert was silent),
-  so Virt plays the zero itself, the way interval-timer apps do. While a workout is going (a countdown running, or a
-  live workout between sets or paused, within the 45-minute rule), Virt is off the screen and Sounds is on, the
+- The zero sound with the phone locked, and no notifications (Tyler, Nov 27: "I don't want all those
+  notifications"; `App/BackgroundSound.swift`, VirtCore's `SoundKeeper`). A workout-timer zero never schedules a
+  notification, in any case (build 90's sound-only one was silent: iOS plays a notification's sound only with words to
+  show). Virt plays the zero itself, the way interval-timer apps do. While a workout is going (a countdown running, or
+  a live workout between sets or paused, within the 45-minute rule), Virt is off the screen and Sounds is on, the
   **sound keeper** holds the audio session in `.playback` with `.mixWithOthers` (his music keeps playing, untouched;
-  no ducking while locked), keeps Virt running with a silent loop (the `audio` background mode, `UIBackgroundModes`
-  in project.yml), and schedules every zero ahead (the running step and each `upcoming` one) with
+  no ducking while locked), keeps Virt running with a silent loop (the `audio` background mode, `UIBackgroundModes` in
+  project.yml), and schedules every zero ahead (the running step and each `upcoming` one) with
   `AVAudioPlayer.play(atTime:)`, the green light 1.2 s early. Every timer change (pause, resume, ±15, skip, a
   lock-screen Log set, which runs in the app as an `AudioPlaybackIntent`) schedules them again. It starts as Virt
   leaves the screen (`sceneWillResignActive`, while iOS still lets audio start) and stops, with the session back to
   `.ambient`, when Virt comes forward, the workout ends or goes quiet, or Sounds is turned off. Never outside a workout.
-- The notification is the safety net: each zero still has one, with its words and sound (as before build 90; category
-  and thread `virt.timer`). While the keeper is playing, it takes each one back 4 seconds before the sound
-  (`SoundKeeper.handOff`) and plays the sound itself, so there's no banner and no double sound. If the keeper can't
-  start, a call, Siri or an alarm interrupts it, or iOS ends Virt, nothing takes the notification back, so it sounds
-  instead (with its banner). A zero with Sounds on is never silent. When the interruption ends, the keeper starts
-  again; a route change (headphones in or out) schedules the zeros again. Delivered ones are still taken away every
-  time Virt runs (`TimerAlerts`); reminders are never touched. While Virt is open there's no banner and no keeper: the
-  app plays its own sound (and ducks his music for it), and a zero the keeper already played never plays again.
+- If the keeper can't play (a call, Siri or an alarm took the audio, the session wouldn't start, or iOS ended Virt),
+  those zeros are simply silent; the keeper starts again when the interruption ends (or at the next timer change,
+  10 s on, if iOS never says it ended), and a route change (headphones in or out) schedules the zeros again. The Live
+  Activity still shows the timer. While Virt is open there's no keeper: the app plays its own sound (and ducks his
+  music for it), and a zero the keeper already played never plays again.
+- Timer notifications from earlier builds are only cleaned up (`TimerAlerts`, category and thread `virt.timer`): any
+  still pending go at launch, delivered ones every time Virt runs. Reminders are never touched.
 - Trade-offs: `.playback` ignores the silent switch, so the zero sounds with the switch on (Sounds off in Virt still
   mutes it); the 3-2-1 ticks are not played while locked (only the zero); a silent loop runs during a workout (small
-  battery cost). For App Review, if it ever asks why Virt uses background audio: "Virt is a workout timer. During a
-  workout only, it plays a short sound at the exact end of each rest or work interval while the phone is locked, mixed
-  with the user's own music, so they can train without looking at the phone. Audio stops when the workout ends." The
-  test build's status line shows `sound keeper on|off|interrupted|failed`, `cue <epoch>`, `fallback N` (timer
-  notifications waiting) and `keeper-seen`; `-uitest-keeper-away` counts the app as away so the UI tests can watch it.
+  battery cost); a zero during a phone call is silent. For App Review, if it ever asks why Virt uses background
+  audio: "Virt is a workout timer. During a workout only, it plays a short sound at the exact end of each rest or work
+  interval while the phone is locked, mixed with the user's own music, so they can train without looking at the
+  phone. Audio stops when the workout ends." The test build's status line shows
+  `sound keeper on|off|interrupted|failed`, `cue <epoch>` (the next zero's sound) and `keeper-seen` (its states this
+  launch); `-uitest-keeper-away` counts the app as away so the UI tests can watch it.
 - The green light (`virt-start-go.caf`, `scripts/sounds.py start`) is the sound when a rest ends in Chime and Digital:
   three short tones then go, started 1.2 s early so the go lands on the zero (`SoundStyle.lead`), with no 3-2-1 ticks.
 - The lock: the cover shows only in the background (not for Control Center, Notification Center or the Face ID sheet)

@@ -1,20 +1,16 @@
 import Foundation
 
 /// The zero sound with the phone locked, and no banner (Tyler, Nov 27). iOS plays a notification's sound only with
-/// words to show, so a sound-only notification is silent. Instead Virt plays the zero itself, the way interval-timer
-/// apps do: while a workout is going and Virt isn't on the screen, it holds a mixable playback audio session (his music
-/// keeps playing, untouched) and keeps running with a silent loop, and schedules each zero's sound at its exact moment.
+/// words to show, so a sound-only notification is silent, and Tyler doesn't want timer notifications at all ("I don't
+/// want all those notifications"). So Virt plays the zero itself, the way interval-timer apps do: while a workout is
+/// going and Virt isn't on the screen, it holds a mixable playback audio session (his music keeps playing, untouched)
+/// and keeps running with a silent loop, and schedules each zero's sound at its exact moment.
 ///
-/// The notifications stay as the safety net: each zero still has one (with its words and sound, as before build 90),
-/// and while the keeper is playing it takes each one back `handOff` seconds before its sound starts, then plays the
-/// sound itself. If the keeper can't start, is interrupted (a phone call) or iOS ends Virt, nothing takes the
-/// notification back, so it sounds instead: a zero is never silent with Sounds on, and never sounds twice.
+/// There's no notification for a timer zero in any case: if the keeper can't play (a phone call took the audio, or
+/// iOS ended Virt), that zero is silent, and the keeper comes back after. The Live Activity still shows the timer.
 ///
 /// These are the rules; the app's side is App/BackgroundSound.swift and Engine.
 public enum SoundKeeper {
-    /// How long before a zero's sound the keeper takes its notification back (plenty for a timer in a running app,
-    /// short enough that the notification is still there if iOS ends Virt a little earlier).
-    public static let handOff: TimeInterval = 4
     /// After the session fails to start, how long before trying again.
     public static let retryAfter: TimeInterval = 10
 
@@ -24,12 +20,12 @@ public enum SoundKeeper {
         case off
         /// Holding the session and playing the silent loop: the zeros are its to play.
         case on
-        /// iOS took the audio away (a call, Siri, an alarm): the notifications sound until it comes back.
+        /// iOS took the audio away (a call, Siri, an alarm): the zeros are silent until it comes back.
         case interrupted
-        /// The session wouldn't start: the notifications sound.
+        /// The session wouldn't start (tried again after `retryAfter`).
         case failed
 
-        /// Only a playing keeper covers the zeros.
+        /// Only a playing keeper is playing the zeros.
         public var covers: Bool { self == .on }
     }
 
@@ -67,27 +63,5 @@ public enum SoundKeeper {
             Cue(key: key(identifier: a.identifier, fireAt: a.fireAt), cue: a.cue, file: style.file(a.cue),
                 playAt: a.fireAt.addingTimeInterval(-style.lead(a.cue)), zeroAt: a.fireAt)
         }.sorted { $0.playAt < $1.playAt }
-    }
-
-    /// What to do with one zero's notification.
-    public enum Alert: Equatable, Sendable {
-        /// Nothing: Sounds off (quiet everywhere, the Lock Screen too).
-        case none
-        /// Keep it scheduled, with its words and its sound: the safety net (or the only sound, with no keeper).
-        case schedule
-        /// Take it back: the keeper is playing and the sound is near, so the keeper plays it (no banner, no double).
-        case handOff
-    }
-
-    public static func alert(soundAt: Date, now: Date, soundsOn: Bool, keeper: State) -> Alert {
-        guard soundsOn else { return .none }
-        if keeper.covers, soundAt.timeIntervalSince(now) <= handOff { return .handOff }
-        return .schedule
-    }
-
-    /// The next moment a notification should be taken back (to arm one exact timer), or nil.
-    public static func nextHandOff(cues: [Cue], now: Date, keeper: State) -> Date? {
-        guard keeper.covers else { return nil }
-        return cues.map { $0.playAt.addingTimeInterval(-handOff) }.filter { $0 > now }.min()
     }
 }

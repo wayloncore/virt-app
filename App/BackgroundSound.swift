@@ -9,7 +9,8 @@ import VirtCore
 /// `AVAudioPlayer.play(atTime:)`. Engine tells it what's ahead on every timer change.
 ///
 /// When it stops, the session goes back to `.ambient` (the app's own sounds then follow the silent switch, as before).
-/// A call, Siri or an alarm interrupts it: Engine hears and lets the notifications sound until it comes back.
+/// A call, Siri or an alarm interrupts it: those zeros are silent (no notification, in any case), and it comes back when
+/// the interruption ends, or at the next timer change after `SoundKeeper.retryAfter` if iOS never says it ended.
 @MainActor final class BackgroundSound {
     static let shared = BackgroundSound()
 
@@ -33,15 +34,14 @@ import VirtCore
     var nextCueAt: Date? { players.values.map(\.playAt).filter { $0 > Date() }.min() }
 
     /// True when this zero's sound is the keeper's (scheduled or already started): the app doesn't play it too.
-    func hasStarted(_ key: String) -> Bool { started.contains(key) }
-
     func covers(_ key: String) -> Bool { started.contains(key) || (state.covers && players[key] != nil) }
 
     /// Runs the keeper (or not) and schedules exactly these zeros.
     func update(run: Bool, cues: [SoundKeeper.Cue], now: Date) {
         observe()
         guard run else { return stop() }
-        if state == .off || (state == .failed && (failedAt.map { now.timeIntervalSince($0) >= SoundKeeper.retryAfter } ?? true)) {
+        let waited = failedAt.map { now.timeIntervalSince($0) >= SoundKeeper.retryAfter } ?? true
+        if state == .off || ((state == .failed || state == .interrupted) && waited) {
             start()
         }
         guard state.covers else { return }
@@ -178,6 +178,7 @@ import VirtCore
         case .began?:
             guard state == .on else { return }
             cancelUnstarted(now: Date())
+            failedAt = Date()
             set(.interrupted)
             onChange?()
         case .ended?:
@@ -192,6 +193,7 @@ import VirtCore
     private func routeChanged() {
         guard state == .on else { return }
         if loop?.isPlaying != true, loop?.play() != true {
+            failedAt = Date()
             set(.interrupted)
         }
         rescheduleAll(now: Date())
