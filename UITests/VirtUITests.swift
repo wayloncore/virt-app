@@ -801,11 +801,33 @@ final class VirtUITests: XCTestCase {
         sleep(2)
         XCTAssertTrue(status(app).contains("lock never"), status(app))
 
+        // the full style list comes with the prefs, and any id in it can be chosen (Nov 27)
+        XCTAssertTrue(web.staticTexts["styles: 16, first Chime (Classic), last Quest jingle (Playful)"].exists, "kineticApp.prefs.soundStyles")
+        web.buttons["Quest jingle"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "style quest-jingle"), status(app))
+        web.buttons["Whistle"].tap()  // not a style Virt has: ignored
+        sleep(2)
+        XCTAssertTrue(status(app).contains("style quest-jingle"), status(app))
+
+        // the sheet's grouped list: the chosen one is checked; tapping another chooses it
+        app.buttons["dbg-settings"].tap()
+        let quest = app.buttons["style-quest-jingle"]
+        XCTAssertTrue(app.buttons["settings-done"].waitForExistence(timeout: 8))
+        for _ in 0..<4 where !quest.isHittable { app.swipeUp() }
+        XCTAssertTrue(quest.isSelected, "the page's choice is checked in the sheet")
+        shot("sound-styles")
+        app.buttons["style-bounce"].tap()
+        XCTAssertTrue(app.buttons["style-bounce"].isSelected)
+        XCTAssertFalse(quest.isSelected)
+        app.buttons["settings-done"].tap()
+        XCTAssertTrue(quest.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(waitStatus(app, contains: "style bounce"), status(app))
+
         web.buttons["Sounds off"].tap()
         XCTAssertTrue(web.staticTexts["event: lock never, sounds false"].waitForExistence(timeout: 10))
 
         app.buttons["dbg-reload"].tap()  // the test build loads the stand-in page again
-        XCTAssertTrue(web.staticTexts["at start: lock never, sounds false, style chime"].waitForExistence(timeout: 20),
+        XCTAssertTrue(web.staticTexts["at start: lock never, sounds false, style bounce"].waitForExistence(timeout: 20),
                       "the next load starts with the new values")
 
         // the native sheet shows the same values
@@ -844,6 +866,9 @@ final class VirtUITests: XCTestCase {
     <p><button onclick="pref('lockAfter', 'never')" style="font-size: 17px">Lock never</button>
     <button onclick="pref('lockAfter', '5m')" style="font-size: 17px">Lock 5m</button>
     <button onclick="pref('sounds', false)" style="font-size: 17px">Sounds off</button></p>
+    <p id="styles">styles: none</p>
+    <p><button onclick="pref('soundStyle', 'quest-jingle')" style="font-size: 17px">Quest jingle</button>
+    <button onclick="pref('soundStyle', 'whistle')" style="font-size: 17px">Whistle</button></p>
     <p><button onclick="post({ type: 'signOut' })" style="font-size: 17px">Sign out</button>
     <button onclick="post({ type: 'deleteAccount' })" style="font-size: 17px">Delete account</button></p>
     <script>
@@ -854,6 +879,8 @@ final class VirtUITests: XCTestCase {
     const k = window.kineticApp || {};
     const p = k.prefs;
     document.getElementById('start').textContent = p ? 'at start: lock ' + p.lockAfter + ', sounds ' + p.sounds + ', style ' + p.soundStyle : 'at start: none';
+    const ls = (p && p.soundStyles) || [];
+    if (ls.length) document.getElementById('styles').textContent = 'styles: ' + ls.length + ', first ' + ls[0].name + ' (' + ls[0].group + '), last ' + ls[ls.length - 1].name + ' (' + ls[ls.length - 1].group + ')';
     addEventListener('kinetic:prefs', (e) => {
       const d = e.detail || {};
       document.getElementById('event').textContent = 'event: lock ' + d.lockAfter + ', sounds ' + d.sounds;

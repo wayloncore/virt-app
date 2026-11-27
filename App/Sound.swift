@@ -63,7 +63,7 @@ import VirtCore
         switch cue {
         case .leadIn: return 0.55
         case .set: return 0.6
-        case .go, .rest: return 0.9
+        case .go, .rest: return 1  // the zeros at full volume (Tyler, Nov 27: he wants them loud)
         case .finish: return 0.8
         }
     }
