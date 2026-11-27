@@ -123,10 +123,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         BundleStore.shared.checkForUpdate(midWorkout: Engine.shared.liveWorkout(now: Date()))
     }
 
-    func sceneWillResignActive(_ scene: UIScene) { lock.willResignActive() }
+    func sceneWillResignActive(_ scene: UIScene) {
+        lock.willResignActive()
+        Engine.shared.willResignActive()
+    }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
         lock.didEnterBackground()
+        Engine.shared.didEnterBackground()
         shell?.saveSignIn()
         shell?.cancelStartWatch()
     }

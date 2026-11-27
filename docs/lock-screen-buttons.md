@@ -105,3 +105,34 @@ Nov 25, 2026. Where the docs say nothing, this says so.
 
 If it still asks: check Settings > Face ID & Passcode > Allow Access When Locked, and make sure the press was on a
 button (a tap on the card opens the app, which always asks).
+
+## The zero sound with the phone locked (Nov 27)
+
+Tyler, Nov 27: the workout timer's zero sound with the phone locked, and no notification banner. Build 90 sent each
+zero as a notification with a sound and no words; on his phone that made no sound at all (iOS plays a notification's
+sound only with words to show).
+
+What Virt does now (`App/BackgroundSound.swift`, VirtCore's `SoundKeeper`):
+
+- **The sound keeper.** During a workout, with Virt off the screen and Sounds on, Virt keeps running in the
+  background the way interval-timer apps do: the `audio` background mode, an audio session in `.playback` with
+  `.mixWithOthers` (his music keeps playing at its own volume), and a silent loop. It plays each zero's sound itself
+  at the exact moment (`AVAudioPlayer.play(atTime:)`). The lock-screen buttons (an `AudioPlaybackIntent`, run in the
+  app) change the timer, and the zeros are scheduled again at once, so a rest started by Log set sounds too.
+- **The safety net.** Each zero still has a notification with its words and sound. The keeper takes it back 4 seconds
+  before the sound and plays it instead: no banner, no double. If the keeper isn't playing (it couldn't start, a call
+  interrupted it, or iOS ended Virt), the notification is still there and sounds, banner and all.
+- **Stops** when Virt comes forward (the app plays its own sounds, as before), the workout ends or goes quiet for
+  45 minutes, or Sounds is turned off. The session goes back to `.ambient`.
+- **Trade-offs.** `.playback` plays through the silent switch (Sounds off in Virt still mutes it). No 3-2-1 ticks
+  while locked, only the zero. No ducking of his music while locked. A silent loop runs during a workout (a small
+  battery cost).
+- **If App Review asks** why Virt uses background audio: "Virt is a workout timer. During a workout only, it plays a
+  short sound at the exact end of each rest or work interval while the phone is locked, mixed with the user's own
+  music, so they can train without looking at the phone. Audio stops when the workout ends."
+
+What only a real locked iPhone can prove: that the sound plays at the zero with the screen off, with and without music
+playing, and that no banner shows. The 30-second test: start a rest of 20 seconds or so, lock the phone, wait. The
+zero should sound with no banner. Then play music and repeat: the music keeps playing and the zero sounds over it.
+Then press Log set on the Live Activity while locked: the rest it starts should sound at its zero too.
+

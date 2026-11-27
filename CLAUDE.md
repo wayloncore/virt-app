@@ -27,7 +27,7 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
   `6WK983RXJT.com.tyleralocke.virt.shared` (not an App Group: App Store Connect's API can't create those). In an unsigned
   simulator build it falls back to the app's own copy.
 - `App/Intents.swift`: Siri, Shortcuts and the Action button (Start my workout; Start a rest timer). `App/Reminders.swift`:
-  training-day reminders. `App/Sound.swift` and `App/Sounds/`: the sounds (`LICENSES.md` says where each came from;
+  training-day reminders. `App/Sound.swift` and `App/Sounds/`: the sounds (`App/BackgroundSound.swift`: the zero sound while locked) (`LICENSES.md` says where each came from;
   `.github/workflows/sounds.yml` and `scripts/sounds.py` make them). `App/SettingsView.swift`: Virt's own settings and
   tips sheet. `App/Intro.swift`: the video intro and the Face ID lock screen's picture (VirtCore's `IntroFlow` is
   its order of events): the launch clip plays on a fresh launch while Face ID asks and ends on the large V, which is
@@ -139,8 +139,8 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   `{ type: 'openNotificationSettings' }`, `{ type: 'deleteAccount' }` (the sheet's own confirmation still asks; a
   friend's door only, never a guest) and `{ type: 'signOut' }` (the sheet's confirmation; waits during a workout).
   Unknown keys and values are ignored; only from Training's own main frame. Virt's sheet stays, on the same values.
-- Sounds off is quiet everywhere Virt controls: no sound in the app, and the Lock Screen's timer alerts are scheduled
-  with no sound (so no buzz either). The reminders keep iOS's sound.
+- Sounds off is quiet everywhere Virt controls: no sound in the app, no sound keeper, and no timer alerts on the Lock
+  Screen (so no buzz either). The reminders keep iOS's sound.
 - The screen stays awake only in the workout (`TimerBoard.keepAwake`): `today` may carry `screen: 'workout'|'other'`;
   with it, awake only on the workout screen (a countdown, or a sign of the workout within 45 minutes); without it,
   only while a countdown is running.
@@ -156,10 +156,32 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   every button's intent from the source and fails if any of this goes.
 - A Log set press with no page to hand it to (iOS started Virt just for the press, or Training was loading) is held on
   the phone (`PendingLogs`, `virt.pending.logs`) and handed over when the page is up, with its moment and id.
-- Workout-timer alerts: iOS plays a notification's sound only with words to show, so each zero is still a quiet
-  notification (category and thread `virt.timer`), but Virt takes the delivered ones away every time it runs, all of
-  them when it comes forward or the workout ends (`TimerAlerts`); reminders are never touched. While Virt is open
-  there's no banner at all: the app plays its own sound.
+- The zero sound with the phone locked, no banner (Tyler, Nov 27; `App/BackgroundSound.swift`, VirtCore's
+  `SoundKeeper`). iOS plays a notification's sound only with words to show (build 90's sound-only alert was silent),
+  so Virt plays the zero itself, the way interval-timer apps do. While a workout is going (a countdown running, or a
+  live workout between sets or paused, within the 45-minute rule), Virt is off the screen and Sounds is on, the
+  **sound keeper** holds the audio session in `.playback` with `.mixWithOthers` (his music keeps playing, untouched;
+  no ducking while locked), keeps Virt running with a silent loop (the `audio` background mode, `UIBackgroundModes`
+  in project.yml), and schedules every zero ahead (the running step and each `upcoming` one) with
+  `AVAudioPlayer.play(atTime:)`, the green light 1.2 s early. Every timer change (pause, resume, ±15, skip, a
+  lock-screen Log set, which runs in the app as an `AudioPlaybackIntent`) schedules them again. It starts as Virt
+  leaves the screen (`sceneWillResignActive`, while iOS still lets audio start) and stops, with the session back to
+  `.ambient`, when Virt comes forward, the workout ends or goes quiet, or Sounds is turned off. Never outside a workout.
+- The notification is the safety net: each zero still has one, with its words and sound (as before build 90; category
+  and thread `virt.timer`). While the keeper is playing, it takes each one back 4 seconds before the sound
+  (`SoundKeeper.handOff`) and plays the sound itself, so there's no banner and no double sound. If the keeper can't
+  start, a call, Siri or an alarm interrupts it, or iOS ends Virt, nothing takes the notification back, so it sounds
+  instead (with its banner). A zero with Sounds on is never silent. When the interruption ends, the keeper starts
+  again; a route change (headphones in or out) schedules the zeros again. Delivered ones are still taken away every
+  time Virt runs (`TimerAlerts`); reminders are never touched. While Virt is open there's no banner and no keeper: the
+  app plays its own sound (and ducks his music for it), and a zero the keeper already played never plays again.
+- Trade-offs: `.playback` ignores the silent switch, so the zero sounds with the switch on (Sounds off in Virt still
+  mutes it); the 3-2-1 ticks are not played while locked (only the zero); a silent loop runs during a workout (small
+  battery cost). For App Review, if it ever asks why Virt uses background audio: "Virt is a workout timer. During a
+  workout only, it plays a short sound at the exact end of each rest or work interval while the phone is locked, mixed
+  with the user's own music, so they can train without looking at the phone. Audio stops when the workout ends." The
+  test build's status line shows `sound keeper on|off|interrupted|failed`, `cue <epoch>`, `fallback N` (timer
+  notifications waiting) and `keeper-seen`; `-uitest-keeper-away` counts the app as away so the UI tests can watch it.
 - The green light (`virt-start-go.caf`, `scripts/sounds.py start`) is the sound when a rest ends in Chime and Digital:
   three short tones then go, started 1.2 s early so the go lands on the zero (`SoundStyle.lead`), with no 3-2-1 ticks.
 - The lock: the cover shows only in the background (not for Control Center, Notification Center or the Face ID sheet)
