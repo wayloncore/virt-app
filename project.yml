@@ -54,6 +54,9 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # the Live Activity (the timer on the lock screen and in the Dynamic Island)
         NSSupportsLiveActivities: true
+        # the workout timer's zero sound with the phone locked (App/BackgroundSound.swift): during a workout only, Virt
+        # keeps running with a mixable audio session and plays each zero itself, with no notification banner
+        UIBackgroundModes: [audio]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         # pure black, no image: the launch clip (App/Intro.swift) starts from black
