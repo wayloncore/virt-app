@@ -13,15 +13,15 @@ final class PrefsTests: XCTestCase {
 
     func testThePrefsObject() {
         XCTAssertEqual(standard.json,
-                       #"{"sounds":true,"soundStyle":"chime","reminders":true,"reminderLine":"6:00 PM on Mon, Tue and Thu","lockAfter":"15m","notifications":"on"}"#)
+                       #"{"sounds":true,"soundStyle":"chime","reminders":true,"reminderLine":"6:00 PM on Mon, Tue and Thu","lockAfter":"15m","notifications":"on","soundStyles":"# + SoundStyle.listJSON + "}")
         let off = AppPrefs(sounds: false, soundStyle: .classic, reminders: false, reminderLine: "6:00 PM every day",
                            lockAfter: .never, notifications: false)
         XCTAssertEqual(off.json,
-                       #"{"sounds":false,"soundStyle":"classic","reminders":false,"reminderLine":"","lockAfter":"never","notifications":"off"}"#,
+                       #"{"sounds":false,"soundStyle":"classic","reminders":false,"reminderLine":"","lockAfter":"never","notifications":"off","soundStyles":"# + SoundStyle.listJSON + "}",
                        "the line is empty while reminders are off")
         // it's real JSON, with exactly the contract's keys and value types
         let o = try! JSONSerialization.jsonObject(with: json(standard.json)) as! [String: Any]
-        XCTAssertEqual(Set(o.keys), ["sounds", "soundStyle", "reminders", "reminderLine", "lockAfter", "notifications"])
+        XCTAssertEqual(Set(o.keys), ["sounds", "soundStyle", "reminders", "reminderLine", "lockAfter", "notifications", "soundStyles"])
         XCTAssertEqual(o["sounds"] as? Bool, true)
         XCTAssertEqual(o["lockAfter"] as? String, "15m")
         for l in LockAfter.allCases {
@@ -29,7 +29,14 @@ final class PrefsTests: XCTestCase {
             XCTAssertTrue(p.json.contains("\"lockAfter\":\"\(l.rawValue)\""))
         }
         XCTAssertEqual(LockAfter.allCases.map(\.rawValue), ["now", "15m", "1h", "never"], "the contract's values")
-        XCTAssertEqual(SoundStyle.allCases.map(\.rawValue), ["chime", "digital", "classic"], "the contract's values")
+        let ids = SoundStyle.allCases.map(\.rawValue)
+        for old in ["chime", "digital", "classic"] { XCTAssertTrue(ids.contains(old), "stored values from before still read: \(old)") }
+        // the full list, in display order, with names and groups
+        let list = o["soundStyles"] as! [[String: String]]
+        XCTAssertEqual(list.map { $0["id"]! }, ids)
+        XCTAssertEqual(list.map { Set($0.keys) }, Array(repeating: ["id", "name", "group"], count: ids.count))
+        XCTAssertEqual(list[0], ["id": "chime", "name": "Chime", "group": "Classic"])
+        XCTAssertEqual(list.first { $0["id"] == "buzzer-horn" }, ["id": "buzzer-horn", "name": "Buzzer horn", "group": "Clean"])
     }
 
     func testTheLineCanNeverBreakOutOfItsQuotes() {
@@ -76,6 +83,10 @@ final class PrefsTests: XCTestCase {
         XCTAssertEqual(AppRequest.decode(json(#"{"type":"pref","key":"sounds","value":false}"#)), .setSounds(false))
         XCTAssertEqual(AppRequest.decode(json(#"{"type":"pref","key":"sounds","value":true}"#)), .setSounds(true))
         XCTAssertEqual(AppRequest.decode(json(#"{"type":"pref","key":"soundStyle","value":"digital"}"#)), .setSoundStyle(.digital))
+        for s in SoundStyle.allCases {
+            XCTAssertEqual(AppRequest.decode(json(#"{"type":"pref","key":"soundStyle","value":""# + s.rawValue + #""}"#)),
+                           .setSoundStyle(s), "any id in soundStyles: \(s.rawValue)")
+        }
         XCTAssertEqual(AppRequest.decode(json(#"{"type":"pref","key":"reminders","value":true}"#)), .setReminders(true))
         for l in LockAfter.allCases {
             XCTAssertEqual(AppRequest.decode(json(#"{"type":"pref","key":"lockAfter","value":"\#(l.rawValue)"}"#)), .setLockAfter(l))

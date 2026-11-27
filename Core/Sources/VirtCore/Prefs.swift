@@ -15,6 +15,8 @@ import Foundation
 public struct AppPrefs: Equatable, Sendable {
     /// Virt's "Sounds" switch. Off: no sound from Virt at all, in the app or on the Lock Screen.
     public var sounds: Bool
+    /// Any id in `soundStyles`, the full list (`[{ id, name, group }]`, in display order) that comes with every
+    /// object, so the page never keeps its own copy of the styles.
     public var soundStyle: SoundStyle
     /// Training-day reminders on.
     public var reminders: Bool
@@ -30,11 +32,11 @@ public struct AppPrefs: Equatable, Sendable {
         self.reminderLine = reminderLine; self.lockAfter = lockAfter; self.notifications = notifications
     }
 
-    /// The object as JSON (valid JavaScript), keys always in this order.
+    /// The object as JSON (valid JavaScript), keys always in this order; `soundStyles` last (added Nov 27).
     public var json: String {
         "{\"sounds\":\(sounds),\"soundStyle\":\(Self.quote(soundStyle.rawValue)),\"reminders\":\(reminders),"
             + "\"reminderLine\":\(Self.quote(reminders ? reminderLine : "")),\"lockAfter\":\(Self.quote(lockAfter.rawValue)),"
-            + "\"notifications\":\(Self.quote(notifications ? "on" : "off"))}"
+            + "\"notifications\":\(Self.quote(notifications ? "on" : "off")),\"soundStyles\":\(SoundStyle.listJSON)}"
     }
 
     /// The `kinetic:prefs` event, and `kineticApp.prefs` brought up to date in place.

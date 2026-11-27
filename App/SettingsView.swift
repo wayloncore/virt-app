@@ -39,6 +39,31 @@ struct SettingsView: View {
     @State private var alertsDenied = false
     private let today = Engine.shared.today
 
+    /// One style in the list: its name (and what it does, for the three that differ), a check on the chosen one.
+    private func styleRow(_ s: SoundStyle) -> some View {
+        Button {
+            style = s
+            PrefsHub.shared.setStyle(s, preview: true)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(s.name).foregroundStyle(soundsOn ? Color.primary : Color.secondary)
+                    if !s.isTone {
+                        Text(s.detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if s == style {
+                    Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Color.virtAccent)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .disabled(!soundsOn)
+        .accessibilityIdentifier("style-\(s.rawValue)")
+        .accessibilityAddTraits(s == style ? .isSelected : [])
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -90,22 +115,24 @@ struct SettingsView: View {
                     Toggle("Sounds", isOn: $soundsOn)
                         .onChange(of: soundsOn) { _, on in PrefsHub.shared.setSounds(on) }
                         .accessibilityIdentifier("sounds-toggle")
-                    Picker("Style", selection: $style) {
-                        ForEach(SoundStyle.allCases, id: \.self) { s in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(s.name)
-                                Text(s.detail).font(.caption).foregroundStyle(.secondary)
-                            }
-                            .tag(s)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    .disabled(!soundsOn)
-                    .onChange(of: style) { _, s in PrefsHub.shared.setStyle(s, preview: true) }
                 } header: {
                     Text("Sounds")
                 } footer: {
-                    Text("A green light when a rest ends (three short tones, then go on the zero), a falling bell when work ends, a click when a set is logged, and a short finish. They mix with your music and follow the silent switch. With the phone locked the same sound comes with a quiet alert, which Virt clears once you're back. With Sounds off, Virt makes no sound at all, on the Lock Screen too.")
+                    Text("A sound at each zero, the 3-2-1 before it, a click when a set is logged, and a short finish. They mix with your music and follow the silent switch. With the phone locked the same sound comes with a quiet alert, which Virt clears once you're back. With Sounds off, Virt makes no sound at all, on the Lock Screen too.")
+                }
+
+                // The styles, grouped (VirtCore's SoundStyle.Group): tap one to choose it and hear it (its work-ends
+                // sound), again to hear it again.
+                ForEach(SoundStyle.Group.allCases, id: \.self) { g in
+                    Section {
+                        ForEach(SoundStyle.styles(in: g), id: \.self) { s in styleRow(s) }
+                    } header: {
+                        Text(g.rawValue)
+                    } footer: {
+                        if g == .playful {
+                            Text("Chime and Digital play a green light when a rest ends (three short tones, then go on the zero). Every other tone plays at both zeros, after the 3-2-1.")
+                        }
+                    }
                 }
 
                 Section {
