@@ -61,6 +61,22 @@ final class SoundKeeperTests: XCTestCase {
         XCTAssertTrue(SoundKeeper.cues(board: b, style: .chime, now: s(91)).isEmpty)
     }
 
+    /// A tone style (Nov 27): the keeper plays its one tone at both zeros, right on the zero (no lead).
+    func testAToneStyleThroughTheKeeper() {
+        var b = TimerBoard()
+        b.apply(.workoutStart(title: "Intervals"), now: s(0))
+        b.apply(.timerStart(TimerStart(id: "int:0", kind: .work, label: "Work", endsAt: s(30), startedAt: s(0), next: "Rest", upcoming: [
+            Step(id: "int:1", kind: .intervalRest, label: "Rest", endsAt: s(45)),
+        ])), now: s(0))
+        let cues = SoundKeeper.cues(board: b, style: .questJingle, now: s(1))
+        XCTAssertEqual(cues.map(\.cue), [.rest, .go])
+        XCTAssertEqual(cues.map(\.file), ["virt-quest-jingle-zero.caf", "virt-quest-jingle-zero.caf"])
+        XCTAssertEqual(cues.map(\.playAt), [s(30), s(45)], "on the zero: the 3-2-1 ticks are its lead-in")
+        // Digital is as it was; Digital up is its own tone style
+        XCTAssertEqual(SoundKeeper.cues(board: b, style: .digital, now: s(1)).first?.file, "virt-digital-rest.caf")
+        XCTAssertEqual(SoundKeeper.cues(board: b, style: .digitalUp, now: s(1)).map(\.playAt), [s(30), s(45)])
+    }
+
     func testEveryUpcomingZeroIsAhead() {
         var b = TimerBoard()
         b.apply(.workoutStart(title: "Intervals"), now: s(0))

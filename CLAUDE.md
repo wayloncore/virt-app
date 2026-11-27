@@ -129,9 +129,11 @@ still knows the set. `today` may carry `live: true/false` (a workout is open on 
 (`LiveWorkout`), and falls back to the 45-minute rule without it.
 Settings through the bridge (the You tab; VirtCore's `Prefs.swift`, the app's `App/Prefs.swift`; the website documents
 the same contract in its docs/kinetic/bridge.md). All additive:
-- Before the page's scripts, every load: `kineticApp.prefs = { sounds: bool, soundStyle: 'chime'|'digital'|'classic',
+- Before the page's scripts, every load: `kineticApp.prefs = { sounds: bool, soundStyle: <any id in soundStyles>,
   reminders: bool, reminderLine: '6:00 PM on Mon, Tue and Thu' ('' when off or not known), lockAfter:
-  'now'|'15m'|'1h'|'never', notifications: 'on'|'off' }` ('off' only when iOS has them off; never asked reads 'on').
+  'now'|'15m'|'1h'|'never', notifications: 'on'|'off', soundStyles: [{ id, name, group }] }` ('off' only when iOS has them off; never asked
+  reads 'on'). `soundStyles` (Nov 27) is every style in display order, from VirtCore's `SoundStyle` (names and groups
+  Classic, Clean, Playful live there, tested), so the page never keeps its own copy.
   The page decides what to show by whether `kineticApp.prefs` exists.
 - `kinetic:prefs` on `window` (CustomEvent, `detail` = the same object, and `kineticApp.prefs` updated in place)
   whenever one changes, from the page or Virt's sheet, and each time Virt comes forward.
@@ -186,6 +188,11 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   launch); `-uitest-keeper-away` counts the app as away so the UI tests can watch it.
 - The green light (`virt-start-go.caf`, `scripts/sounds.py start`) is the sound when a rest ends in Chime and Digital:
   three short tones then go, started 1.2 s early so the go lands on the zero (`SoundStyle.lead`), with no 3-2-1 ticks.
+- The tones (Tyler, Nov 27; `scripts/sounds.py tones`, -1.5 dBFS, the exact synthesis he approved): 14 tone
+  styles (Digital up to Quest jingle, `SoundStyle.isTone`; Digital itself is unchanged) play
+  their one tone (`virt-<id>-zero.caf`) at both zeros with no lead (so the 3-2-1 ticks play), with Chime's tick, click
+  and finish. The zeros play at full player volume. Settings shows them grouped (Classic, Clean, Playful); tapping one
+  chooses it and plays its work-ends sound. Always "Buzzer horn", never the word buzz alone.
 - The lock: the cover shows only in the background (not for Control Center, Notification Center or the Face ID sheet)
   and lifts on return; never a lock or the launch clip while a workout is live (remembered across a launch,
   `virt.workout.live`); the lock is the app's, not the scene's; "Lock after" in Virt's settings (`lock.after`: Right

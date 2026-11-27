@@ -1027,6 +1027,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             + " · page \(String((web?.url?.absoluteString ?? "none").prefix(48)))"
             + " · bundle \(BundleStore.shared.active?.version ?? "none")\(BundleStore.shared.note)"
             + " · lock \(LockAfter(stored: UserDefaults.standard.string(forKey: LockAfter.key)).rawValue) · prefs sent \(PrefsHub.shared.sent)"
+            + " · style \(SoundBoard.shared.style.rawValue)"
         view.bringSubviewToFront(l.superview ?? l)
     }
 }
