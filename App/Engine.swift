@@ -19,7 +19,7 @@ import WidgetKit
 }
 
 /// The native side of Training: it hears the page's messages, keeps the timer state (VirtCore's TimerBoard), and
-/// turns it into the four things the web can't do well: alerts at the exact zero (local notifications), the Live
+/// turns it into the four things the web can't do well: the zero sound with the phone locked (the sound keeper), the Live
 /// Activity, the screen kept awake, and the chime and buzz while the app is open.
 ///
 /// Nothing here leaves the phone. No server, no analytics, no AI.
@@ -33,16 +33,16 @@ import WidgetKit
     private(set) var activityNote = "off"
 
     private var activity: Activity<VirtTimerAttributes>?
-    private var scheduled: [String: Date] = [:]
-    private var scheduledStyle = SoundBoard.shared.style
-    /// Whether the scheduled alerts carry a sound (Sounds on), so turning it off or on schedules them again.
-    private var scheduledWithSound = SoundBoard.shared.enabled
     private var chimeTimer: Timer?
+    /// True while Virt isn't on the screen (from the moment it starts to leave: the lock, the Home Screen, Control
+    /// Center), which is when the lock-screen sound keeper runs. The test build's `-uitest-keeper-away` keeps it true
+    /// so the UI tests can watch the keeper with the app open.
+    private var away = false
+    private let keeperAwayForTest = ProcessInfo.processInfo.arguments.contains("-uitest-keeper-away")
     private var tickTimers: [Timer] = []
     /// The zero whose sound has started (its identifier and end), so arming again never plays it twice.
     private var soundStarted: String?
     private var quietTimer: Timer?
-    private var askedForAlerts = false
     private var askedAboutReminders = false
     /// Log set from the lock screen: one press is one set (VirtCore's LogPress).
     private var logPress = LogPress()
@@ -72,6 +72,9 @@ import WidgetKit
 
     func launched() {
         SoundBoard.shared.setUp()
+        // a launch in the background (a lock-screen press, a Siri rest) is away; a normal launch comes to the screen
+        away = UIApplication.shared.applicationState == .background
+        BackgroundSound.shared.onChange = { [weak self] in self?.refresh() }
         // the workout as it was when Virt last ran (iOS may have ended the app since): a lock-screen button that woke
         // this launch still finds the set to log and keeps the Live Activity
         let now = Date()
@@ -90,13 +93,11 @@ import WidgetKit
         let left = Activity<VirtTimerAttributes>.activities
         activity = left.first
         for extra in left.dropFirst() { Task { await extra.end(nil, dismissalPolicy: .immediate) } }
+        // the workout timer never schedules a notification (Tyler, Nov 27: "I don't want all those notifications"):
+        // any left waiting from an earlier build go
         UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
-            let ours = reqs.filter { TimerAlerts.isTimer($0.identifier) }
-            Task { @MainActor in
-                for r in ours {
-                    if let t = r.trigger as? UNTimeIntervalNotificationTrigger, let at = t.nextTriggerDate() { self.scheduled[r.identifier] = at }
-                }
-            }
+            let ids = TimerAlerts.pendingToRemove(reqs.map(\.identifier))
+            if !ids.isEmpty { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids) }
         }
         refresh()
     }
@@ -104,10 +105,9 @@ import WidgetKit
     // MARK: - In
 
     func receive(_ message: BridgeMessage) {
+        // the workout timer needs no notification permission (the sound keeper plays the zeros): only turning on the
+        // reminders asks iOS (Reminders.swift)
         switch message {
-        // the first workout asks iOS for alerts while Virt is open, never from a lock-screen press (a locked phone
-        // can't show the ask)
-        case .workoutStart, .timerStart: askForAlerts()
         case .today(let t): return receiveToday(t)
         case .setLogged:
             if UIApplication.shared.applicationState == .active {
@@ -219,7 +219,6 @@ import WidgetKit
     /// takes it over when it hears.
     func startRest(seconds: Int) {
         let now = Date()
-        askForAlerts()
         board.startNativeRest(seconds: seconds, now: now)
         refresh()
         flush(queue.add(.rest(endsAt: now.addingTimeInterval(TimeInterval(seconds))), now: now))
@@ -280,17 +279,11 @@ import WidgetKit
         if !commands.isEmpty { onChange?() }
     }
 
-    /// Sounds turned off or on: the alerts already scheduled are scheduled again, silent or with their sound.
-    func soundsChanged() {
-        scheduled = [:]
-        refresh()
-    }
+    /// Sounds turned off or on: the sound keeper stops or starts.
+    func soundsChanged() { refresh() }
 
-    /// The sound style changed: the alerts already scheduled get the new sound.
-    func soundStyleChanged() {
-        scheduled = [:]
-        refresh()
-    }
+    /// The sound style changed: the keeper's zeros get the new sound.
+    func soundStyleChanged() { refresh() }
 
     /// A lock-screen or Dynamic Island button, Control Center's Log set, or the test build's buttons. They run in
     /// Virt's process with the phone locked, so nothing here asks iOS for anything or needs the phone unlocked.
@@ -317,7 +310,20 @@ import WidgetKit
         }
     }
 
+    /// Virt is leaving the screen (the lock, the Home Screen, Control Center): the sound keeper takes over the zeros
+    /// while a workout is going. It starts here, while Virt is still in front, so iOS lets the audio start.
+    func willResignActive() {
+        away = true
+        refresh()
+    }
+
+    func didEnterBackground() {
+        away = true
+        refresh()
+    }
+
     func becameActive() {
+        away = false
         refresh()
         refreshReminders()
         // Virt's open: no workout-timer alert stays on the Lock Screen or in Notification Center
@@ -375,7 +381,7 @@ import WidgetKit
     func refresh() {
         let now = Date()
         board.expireNative(now: now)
-        scheduleAlerts(now: now)
+        updateKeeper(now: now)
         updateActivity(now: now)
         applyAwake(now: now)
         armChime(now: now)
@@ -397,50 +403,15 @@ import WidgetKit
         }
     }
 
-    /// Asks iOS for alerts once, and only with Virt open on the screen (never from a lock-screen press or Siri in the
-    /// background: a locked phone can't show the ask).
-    private func askForAlerts() {
-        guard !askedForAlerts, UIApplication.shared.applicationState == .active else { return }
-        askedForAlerts = true
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in
-            Task { @MainActor in self.scheduled = [:]; self.refresh() }
-        }
-    }
-
-    /// Alerts at the exact zero, with the phone locked or the app in the background. Each step has one identifier, so
-    /// scheduling it again replaces it.
-    private func scheduleAlerts(now: Date) {
-        let center = UNUserNotificationCenter.current()
-        let plan = board.alerts(now: now)
-        if scheduledStyle != SoundBoard.shared.style { scheduledStyle = SoundBoard.shared.style; scheduled = [:] }
-        let withSound = SoundBoard.shared.enabled
-        if scheduledWithSound != withSound { scheduledWithSound = withSound; scheduled = [:] }
-        let wanted = Set(plan.map(\.identifier))
-        let gone = scheduled.keys.filter { !wanted.contains($0) }
-        if !gone.isEmpty { center.removePendingNotificationRequests(withIdentifiers: gone) }
-        for id in gone { scheduled[id] = nil }
-        for a in plan {
-            // the green light starts a moment early, so its go tone lands on the zero
-            let soundAt = a.fireAt.addingTimeInterval(-SoundBoard.shared.style.lead(a.cue))
-            if let had = scheduled[a.identifier], abs(had.timeIntervalSince(soundAt)) < 0.05 { continue }
-            let content = UNMutableNotificationContent()
-            // No banner for a workout timer (Tyler, Nov 24 and 25: "I don't want the pop-up notification… I want the live
-            // tracker to be that notification"). The alert carries only its sound: with no title and no body iOS has
-            // nothing to show on the Lock Screen or in Notification Center, and the Live Activity says what's next.
-            // With Sounds off there's nothing to deliver at all, so nothing is scheduled (below).
-            _ = (a.title, a.body)
-            // Sounds off: quiet everywhere, the Lock Screen too (no sound means no buzz either)
-            guard withSound else { continue }
-            content.sound = SoundBoard.shared.notificationSound(a.cue)
-            content.interruptionLevel = .active
-            // its own category and thread, apart from the reminders, and last in the list
-            content.categoryIdentifier = TimerAlerts.category
-            content.threadIdentifier = TimerAlerts.thread
-            content.relevanceScore = 0
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(0.1, soundAt.timeIntervalSince(now)), repeats: false)
-            center.add(UNNotificationRequest(identifier: a.identifier, content: content, trigger: trigger))
-            scheduled[a.identifier] = soundAt
-        }
+    /// The zero sound with the phone locked (Tyler, Nov 27): the sound keeper (App/BackgroundSound.swift) is on while a
+    /// workout is going, Virt is away and Sounds is on (VirtCore's SoundKeeper.shouldRun), with every zero ahead
+    /// scheduled. There's no notification for a timer zero, in any case (Tyler, Nov 27: "I don't want all those
+    /// notifications"): if the keeper can't play (a call took the audio), that zero is silent and the keeper comes back
+    /// after. The Live Activity still shows the timer.
+    private func updateKeeper(now: Date) {
+        let run = SoundKeeper.shouldRun(soundsOn: SoundBoard.shared.enabled, away: away || keeperAwayForTest, board: board,
+                                        live: liveWorkout(now: now), now: now)
+        BackgroundSound.shared.update(run: run, cues: SoundKeeper.cues(board: board, style: SoundBoard.shared.style, now: now), now: now)
     }
 
     private func updateActivity(now: Date) {
@@ -472,8 +443,8 @@ import WidgetKit
         }
     }
 
-    /// While the app is open: the soft 3-2-1 ticks, then the chime and a strong buzz at the exact zero (the
-    /// notification is held back then, so they don't double up).
+    /// While the app is open: the soft 3-2-1 ticks, then the chime and a strong buzz at the exact zero (away from the
+    /// screen, the sound keeper plays the zero instead).
     private func armChime(now: Date) {
         chimeTimer?.invalidate()
         chimeTimer = nil
@@ -485,7 +456,7 @@ import WidgetKit
         // the zero sound starts early by its own lead-in (the green light's three tones), so its main tone is the zero
         let lead = SoundBoard.shared.style.lead(cue)
         let soundAt = next.fireAt.addingTimeInterval(-lead)
-        let key = "\(next.identifier)@\(next.fireAt.timeIntervalSince1970)"
+        let key = SoundKeeper.key(identifier: next.identifier, fireAt: next.fireAt)
         if soundAt > now {
             tickTimers.append(exactTimer(at: soundAt) { self.zeroSound(cue, key: key) })
         } else if soundStarted != key {
@@ -503,10 +474,12 @@ import WidgetKit
         return t
     }
 
-    /// The zero's sound, while the app is open (the notification is held back then). Once per zero.
+    /// The zero's sound, while the app is open. Once per zero, and never one the sound keeper has played.
     private func zeroSound(_ cue: SoundCue, key: String) {
         guard soundStarted != key else { return }
         soundStarted = key
+        // the lock-screen sound keeper has it (scheduled or already sounding): never twice
+        if BackgroundSound.shared.covers(key) { return }
         if UIApplication.shared.applicationState == .active { SoundBoard.shared.play(cue) }
     }
 
@@ -557,6 +530,10 @@ import WidgetKit
         parts.append("reminders \(Reminders.shared.count) (ask \(askNote))")
         parts.append("taps \(lightTaps)")
         parts.append("sound \(SoundBoard.shared.last)")
+        let keeper = BackgroundSound.shared
+        parts.append("sound keeper \(keeper.state.rawValue)")
+        parts.append("cue \(keeper.nextCueAt.map { String(Int($0.timeIntervalSince1970.rounded())) } ?? "none")")
+        parts.append("keeper-seen \(keeper.history.isEmpty ? "none" : keeper.history.joined(separator: ">"))")
         parts.append("held \(pendingLogs.count)")
         #if DEBUG
         parts.append("locked-read \(LockedRead.summary)")

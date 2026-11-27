@@ -74,15 +74,14 @@ public struct LogPress: Equatable, Sendable {
     }
 }
 
-/// The workout timer's alerts in Notification Center. iOS plays a notification's sound only with words to show
-/// (there's no sound-only notification), so each zero's alert is a real notification; Virt keeps them out of the way:
+/// The workout timer's notifications, now only cleaned up: since Nov 27 a timer zero never schedules one (the sound
+/// keeper plays the zero; Tyler: "I don't want all those notifications"). Earlier builds left some, pending or
+/// delivered, so:
 ///
 /// - Their own identifiers (`prefix`), category and thread, so the training-day reminders and the streak nudge are
 ///   never touched.
-/// - Every time Virt runs (a page message, a lock-screen button, coming forward), the ones already delivered are
-///   taken away, so at most the latest one is ever on the Lock Screen or in Notification Center, and none once Virt
-///   is open or the workout ends.
-/// - One delivered in the last `sounding` seconds stays while Virt runs in the background, so its sound isn't cut off.
+/// - Any still waiting from an earlier build are taken away at launch (`pendingToRemove`).
+/// - Delivered ones are taken away every time Virt runs, all of them when it comes forward or the workout ends.
 public enum TimerAlerts {
     public static let prefix = "virt.timer."
     public static let category = "virt.timer"
@@ -90,6 +89,9 @@ public enum TimerAlerts {
     public static let sounding: TimeInterval = 3
 
     public static func isTimer(_ identifier: String) -> Bool { identifier.hasPrefix(prefix) }
+
+    /// The pending timer notifications to take away (all of them: none is scheduled any more). Reminders stay.
+    public static func pendingToRemove(_ pending: [String]) -> [String] { pending.filter(isTimer) }
 
     /// The delivered timer alerts to take away now. `everything`: the app is open, or the workout ended.
     public static func toRemove(delivered: [(id: String, at: Date)], now: Date, everything: Bool) -> [String] {

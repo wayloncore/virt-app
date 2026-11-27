@@ -347,6 +347,64 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(activityOn, "the Live Activity started")
     }
 
+    /// The zero sound with the phone locked (Tyler, Nov 27): the sound keeper follows the timer. The test build's
+    /// `-uitest-keeper-away` counts the app as away, so the status line can be read with it open: on with a zero
+    /// scheduled while resting, nothing scheduled while paused or after a skip, off when the workout ends. No
+    /// notification permission is asked when a workout starts (the timer has no notifications).
+    func testSoundKeeperFollowsTheTimer() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page], args: ["-uitest-keeper-away"])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20))
+        XCTAssertTrue(waitStatus(app, contains: "sound keeper off"), "no workout, no keeper: \(status(app))")
+
+        web.buttons["Start rest"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "timer rest:"), status(app))
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertFalse(springboard.alerts.buttons["Allow"].waitForExistence(timeout: 3), "no notification ask for a workout")
+        XCTAssertTrue(waitStatus(app, contains: "sound keeper on", 10), "the keeper runs in a workout: \(status(app))")
+        let end = endsAt(app) ?? 0
+        // Chime: the green light starts 1.2 s before the zero
+        XCTAssertTrue(status(app).range(of: #"cue \d+"#, options: .regularExpression) != nil, "a zero scheduled: \(status(app))")
+        if let r = status(app).range(of: #"cue \d+"#, options: .regularExpression), let cue = Int(status(app)[r].dropFirst(4)) {
+            XCTAssertTrue(abs(cue - (end - 1)) <= 1, "the cue starts just before the zero: cue \(cue), ends \(end)")
+        }
+        shot("keeper-on")
+
+        app.buttons["dbg-pause"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "paused"), status(app))
+        XCTAssertTrue(waitStatus(app, contains: "cue none", 5), "nothing to play while paused: \(status(app))")
+        XCTAssertTrue(status(app).contains("sound keeper on"), "still the workout: \(status(app))")
+
+        app.buttons["dbg-resume"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "running"), status(app))
+        XCTAssertTrue(status(app).range(of: #"cue \d+"#, options: .regularExpression) != nil, "the zero is back: \(status(app))")
+
+        app.buttons["dbg-skip"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "cue none", 5), "skipped: nothing ahead: \(status(app))")
+
+        web.buttons["Finish"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "sound keeper off"), "the workout's over: \(status(app))")
+        XCTAssertTrue(status(app).contains("cue none"), status(app))
+    }
+
+    /// The real trip: Virt leaves the screen mid-rest and the keeper starts; back on the screen it's off again and
+    /// the app plays its own sounds, as before.
+    func testSoundKeeperStartsWhenVirtLeavesTheScreen() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20))
+        web.buttons["Start rest"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "timer rest:"), status(app))
+        XCTAssertTrue(status(app).contains("sound keeper off"), "on the screen, the app chimes itself: \(status(app))")
+        XCUIDevice.shared.press(.home)
+        sleep(3)
+        app.activate()
+        XCTAssertTrue(waitStatus(app, contains: "sound keeper off", 10), status(app))
+        XCTAssertTrue(status(app).contains("keeper-seen on>off"), "it ran while away: \(status(app))")
+        web.buttons["Finish"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "timer none"), status(app))
+    }
+
     // MARK: - Today, reminders, Siri's commands and the set haptic
 
     /// The page's `today` reaches Virt (status line, shared store), the friendly reminders ask comes once, a logged set
