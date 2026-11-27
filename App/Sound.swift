@@ -60,10 +60,10 @@ import VirtCore
     }
 
     /// A sample for the settings sheet (plays even with Sounds off, so he can hear a style before choosing it).
-    /// What a style sounds like when it's picked. The rest-ends "go" is the same green-light tone in Chime and Digital
-    /// (Tyler, Nov 24), so it can't tell them apart: the preview plays the style's own set sound, which differs in all
-    /// three (Tyler, Nov 25: "there's 3 listed but the sounds only has two different ones").
-    func preview(_ style: SoundStyle) { play(style == .classic ? .rest : .set, style: style, force: true) }
+    /// The rest-ends "go" is the same green-light tone in Chime and Digital (Tyler, Nov 24), so it can't tell them
+    /// apart, and the set click is too short and quiet to hear as a sample (Tyler, Nov 27: "when clicked on digital or
+    /// chime no sound made"). Each style's work-ends sound is a full tone and differs in all three, so that's the sample.
+    func preview(_ style: SoundStyle) { play(.rest, style: style, force: true) }
 
     static func volume(_ cue: SoundCue) -> Float {
         switch cue {
