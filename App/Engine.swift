@@ -424,10 +424,14 @@ import WidgetKit
             let soundAt = a.fireAt.addingTimeInterval(-SoundBoard.shared.style.lead(a.cue))
             if let had = scheduled[a.identifier], abs(had.timeIntervalSince(soundAt)) < 0.05 { continue }
             let content = UNMutableNotificationContent()
-            content.title = a.title
-            content.body = a.body
+            // No banner for a workout timer (Tyler, Nov 24 and 25: "I don't want the pop-up notification… I want the live
+            // tracker to be that notification"). The alert carries only its sound: with no title and no body iOS has
+            // nothing to show on the Lock Screen or in Notification Center, and the Live Activity says what's next.
+            // With Sounds off there's nothing to deliver at all, so nothing is scheduled (below).
+            _ = (a.title, a.body)
             // Sounds off: quiet everywhere, the Lock Screen too (no sound means no buzz either)
-            content.sound = withSound ? SoundBoard.shared.notificationSound(a.cue) : nil
+            guard withSound else { continue }
+            content.sound = SoundBoard.shared.notificationSound(a.cue)
             content.interruptionLevel = .active
             // its own category and thread, apart from the reminders, and last in the list
             content.categoryIdentifier = TimerAlerts.category
