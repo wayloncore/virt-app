@@ -4,8 +4,8 @@ notification sound, 30 seconds at most).
 
   sounds.py synth OUTDIR             makes the Chime style: clean synthesized bells (no downloads needed)
   sounds.py start OUTDIR             makes only the green light (virt-start-go.caf), the sound when a rest ends
-  sounds.py tones OUTDIR             makes the zero tones: Digital's rising trill and one tone for each of the newer
-                                     styles (Arcade to Quest jingle), loud and clear
+  sounds.py tones OUTDIR             makes the zero tones: one for each of the tone styles (Digital up to Quest jingle),
+                                     loud and clear
   sounds.py survey PACKDIR SHOTDIR   lists every sound in the Kenney packs with its length, level, pitch and decay,
                                      and draws spectrograms of the likely bells, chimes, ticks and clicks
   sounds.py pick PACKDIR PICKS OUTDIR  trims and levels the files PICKS (a JSON file) names, into the Digital style
@@ -228,7 +228,7 @@ def t_seq(notes, fn, tail=0.3):
     return place(parts, t + tail)
 
 
-def tone_digital_up():  # Digital's work-ends sound: a fast trill rising, then a held high note (louder than before)
+def tone_digital_up():  # Digital up: a fast trill rising, then a held high note (Digital's run, but up and louder)
     E5, G5, B5, E6, G6 = (NOTE[k] for k in ("E5", "G5", "B5", "E6", "G6"))
     run = [(i * 0.07, t_env(t_square(f, 0.09, 0.5, 5), 0.003, 0.02), 1) for i, f in enumerate([E5, G5, B5, E6, G6, B5 * 2])]
     held = t_env(t_square(E6 * 2, 0.35, 0.5, 4) * np.exp(-t_axis(0.35) / 0.18), 0.003, 0.08)
@@ -318,7 +318,7 @@ def tone_quest_jingle():  # a cheerful music-box ditty
 
 # file name -> synthesis. VirtCore's SoundStyle.file names the same files.
 TONES = {
-    "virt-digital-up.caf": tone_digital_up,
+    "virt-digital-up-zero.caf": tone_digital_up,
     "virt-arcade-zero.caf": tone_arcade,
     "virt-ring-bell-zero.caf": tone_ring_bell,
     "virt-marimba-zero.caf": tone_marimba,

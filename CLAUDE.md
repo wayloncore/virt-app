@@ -188,8 +188,8 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   launch); `-uitest-keeper-away` counts the app as away so the UI tests can watch it.
 - The green light (`virt-start-go.caf`, `scripts/sounds.py start`) is the sound when a rest ends in Chime and Digital:
   three short tones then go, started 1.2 s early so the go lands on the zero (`SoundStyle.lead`), with no 3-2-1 ticks.
-- The tones (Tyler, Nov 27; `scripts/sounds.py tones`, -1.5 dBFS, the exact synthesis he approved): Digital's work-ends
-  sound is a rising trill (`virt-digital-up.caf`), and 13 tone styles (Glass to Quest jingle, `SoundStyle.isTone`) play
+- The tones (Tyler, Nov 27; `scripts/sounds.py tones`, -1.5 dBFS, the exact synthesis he approved): 14 tone
+  styles (Digital up to Quest jingle, `SoundStyle.isTone`; Digital itself is unchanged) play
   their one tone (`virt-<id>-zero.caf`) at both zeros with no lead (so the 3-2-1 ticks play), with Chime's tick, click
   and finish. The zeros play at full player volume. Settings shows them grouped (Classic, Clean, Playful); tapping one
   chooses it and plays its work-ends sound. Always "Buzzer horn", never the word buzz alone.

@@ -8,13 +8,13 @@ final class SoundStyleTests: XCTestCase {
         XCTAssertEqual(SoundStyle.Group.allCases.map(\.rawValue), ["Classic", "Clean", "Playful"])
         XCTAssertEqual(SoundStyle.styles(in: .classic).map(\.name), ["Chime", "Classic"])
         XCTAssertEqual(SoundStyle.styles(in: .clean).map(\.name),
-                       ["Digital", "Glass", "Sonar", "Synth rise", "Watch beeps", "Marimba", "Ring bell", "Buzzer horn"])
+                       ["Digital", "Digital up", "Glass", "Sonar", "Synth rise", "Watch beeps", "Marimba", "Ring bell", "Buzzer horn"])
         XCTAssertEqual(SoundStyle.styles(in: .playful).map(\.name),
                        ["Arcade", "Level up", "Coin pickup", "Victory", "Bounce", "Quest jingle"])
         // allCases is the groups one after another, so the page's list is already in display order
         XCTAssertEqual(SoundStyle.allCases, SoundStyle.Group.allCases.flatMap { SoundStyle.styles(in: $0) })
-        XCTAssertEqual(SoundStyle.allCases.count, 16)
-        XCTAssertEqual(Set(SoundStyle.allCases.map(\.name)).count, 16, "every name differs")
+        XCTAssertEqual(SoundStyle.allCases.count, 17)
+        XCTAssertEqual(Set(SoundStyle.allCases.map(\.name)).count, 17, "every name differs")
         for s in SoundStyle.allCases {
             XCTAssertFalse(s.name.lowercased().split(separator: " ").contains("buzz"), "never the word buzz alone")
         }
@@ -30,9 +30,9 @@ final class SoundStyleTests: XCTestCase {
     }
 
     func testFiles() {
-        // Digital: the green light, then the rising trill when work ends; its ticks, click and finish stay
+        // Digital exactly as before (Tyler, Nov 27: "I like the digital one that's already on there")
         XCTAssertEqual(SoundStyle.digital.file(.go), SoundStyle.startFile)
-        XCTAssertEqual(SoundStyle.digital.file(.rest), "virt-digital-up.caf")
+        XCTAssertEqual(SoundStyle.digital.file(.rest), "virt-digital-rest.caf")
         XCTAssertEqual(SoundStyle.digital.file(.leadIn), "virt-digital-tick.caf")
         XCTAssertEqual(SoundStyle.digital.file(.set), "virt-digital-set.caf")
         XCTAssertEqual(SoundStyle.digital.file(.finish), "virt-digital-finish.caf")
@@ -44,7 +44,8 @@ final class SoundStyleTests: XCTestCase {
             for c in [SoundCue.leadIn, .set, .finish] { XCTAssertEqual(s.file(c), SoundStyle.chime.file(c)) }
             for c in SoundCue.allCases { XCTAssertEqual(s.lead(c), 0, "\(s.rawValue) \(c.rawValue)") }
         }
-        XCTAssertEqual(SoundStyle.allCases.filter(\.isTone).count, 13)
+        XCTAssertEqual(SoundStyle.allCases.filter(\.isTone).count, 14)
+        XCTAssertEqual(SoundStyle.digitalUp.file(.rest), "virt-digital-up-zero.caf", "Digital up: its own style")
         XCTAssertFalse(SoundStyle.chime.isTone || SoundStyle.classic.isTone || SoundStyle.digital.isTone)
     }
 

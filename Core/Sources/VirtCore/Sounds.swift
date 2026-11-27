@@ -30,9 +30,10 @@ public enum SoundStyle: String, CaseIterable, Sendable {
     case chime
     /// The first Virt chime, for every zero.
     case classic
-    /// Clean tones and clicks picked from Kenney's free (CC0) Interface Sounds; work ends with a rising trill.
+    /// Clean tones and clicks picked from Kenney's free (CC0) Interface Sounds.
     case digital
     // The tone styles (Tyler, Nov 27): one loud tone, synthesized for Virt (`scripts/sounds.py tones`), for both zeros.
+    case digitalUp = "digital-up"
     case glass
     case sonar
     case synthRise = "synth-rise"
@@ -59,6 +60,7 @@ public enum SoundStyle: String, CaseIterable, Sendable {
         case .chime: return "Chime"
         case .classic: return "Classic"
         case .digital: return "Digital"
+        case .digitalUp: return "Digital up"
         case .glass: return "Glass"
         case .sonar: return "Sonar"
         case .synthRise: return "Synth rise"
@@ -78,7 +80,7 @@ public enum SoundStyle: String, CaseIterable, Sendable {
     public var group: Group {
         switch self {
         case .chime, .classic: return .classic
-        case .digital, .glass, .sonar, .synthRise, .watchBeeps, .marimba, .ringBell, .buzzerHorn: return .clean
+        case .digital, .digitalUp, .glass, .sonar, .synthRise, .watchBeeps, .marimba, .ringBell, .buzzerHorn: return .clean
         case .arcade, .levelUp, .coinPickup, .victory, .bounce, .questJingle: return .playful
         }
     }
@@ -92,7 +94,7 @@ public enum SoundStyle: String, CaseIterable, Sendable {
     public var detail: String {
         switch self {
         case .chime: return "A green light when a rest ends, a soft falling bell when work ends"
-        case .digital: return "A green light when a rest ends, a rising trill when work ends"
+        case .digital: return "A green light when a rest ends, a falling run of clean tones when work ends"
         case .classic: return "The first Virt chime"
         default: return "The same tone at both zeros, after a 3-2-1"
         }
@@ -113,8 +115,6 @@ public enum SoundStyle: String, CaseIterable, Sendable {
     public static let startLead: TimeInterval = 1.2
 
     /// The bundled file for a cue. Classic has one zero sound and a tone style one tone; their other cues use Chime's.
-    /// Digital's work-ends sound is the rising trill (Tyler, Nov 27); its old falling run (`virt-digital-rest.caf`)
-    /// stays in the app for a rollback.
     public func file(_ cue: SoundCue) -> String {
         let zero = cue == .go || cue == .rest
         switch self {
@@ -122,7 +122,6 @@ public enum SoundStyle: String, CaseIterable, Sendable {
             return zero ? "virt-chime.wav" : SoundStyle.chime.file(cue)
         case .chime, .digital:
             if cue == .go { return Self.startFile }
-            if self == .digital && cue == .rest { return "virt-digital-up.caf" }
             return "virt-\(rawValue)-\(cue.rawValue).caf"
         default:
             return zero ? "virt-\(rawValue)-zero.caf" : SoundStyle.chime.file(cue)

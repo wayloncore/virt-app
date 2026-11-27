@@ -802,7 +802,7 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(status(app).contains("lock never"), status(app))
 
         // the full style list comes with the prefs, and any id in it can be chosen (Nov 27)
-        XCTAssertTrue(web.staticTexts["styles: 16, first Chime (Classic), last Quest jingle (Playful)"].exists, "kineticApp.prefs.soundStyles")
+        XCTAssertTrue(web.staticTexts["styles: 17, first Chime (Classic), last Quest jingle (Playful)"].exists, "kineticApp.prefs.soundStyles")
         web.buttons["Quest jingle"].tap()
         XCTAssertTrue(waitStatus(app, contains: "style quest-jingle"), status(app))
         web.buttons["Whistle"].tap()  // not a style Virt has: ignored

@@ -72,8 +72,9 @@ final class SoundKeeperTests: XCTestCase {
         XCTAssertEqual(cues.map(\.cue), [.rest, .go])
         XCTAssertEqual(cues.map(\.file), ["virt-quest-jingle-zero.caf", "virt-quest-jingle-zero.caf"])
         XCTAssertEqual(cues.map(\.playAt), [s(30), s(45)], "on the zero: the 3-2-1 ticks are its lead-in")
-        // Digital's work-ends is the rising trill now
-        XCTAssertEqual(SoundKeeper.cues(board: b, style: .digital, now: s(1)).first?.file, "virt-digital-up.caf")
+        // Digital is as it was; Digital up is its own tone style
+        XCTAssertEqual(SoundKeeper.cues(board: b, style: .digital, now: s(1)).first?.file, "virt-digital-rest.caf")
+        XCTAssertEqual(SoundKeeper.cues(board: b, style: .digitalUp, now: s(1)).map(\.playAt), [s(30), s(45)])
     }
 
     func testEveryUpcomingZeroIsAhead() {
