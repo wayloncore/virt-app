@@ -38,10 +38,19 @@ public struct NextSet: Codable, Equatable, Hashable, Sendable {
     public var label: String
     /// The seconds of the rest that logging it starts, when the plan gives one.
     public var rest: Int?
+    /// The sets Log set would log after this one, in order, as the page says them (`then`, added Nov 27; website
+    /// docs/kinetic/bridge.md). In a superset or circuit that's the next exercise of the round, never this exercise
+    /// again. nil from an older page (then Virt guesses, `following`); empty when the page says nothing can be logged
+    /// by a press next (a timed exercise's turn, the end of the exercise or group). Saved-data rule: optional, added.
+    public var thenSets: [NextSet]?
+    /// What the rest that logging it starts is followed by, in the page's words (`after`: "Seated row machine",
+    /// "round 2 of 3", "Plank"). nil from an older page.
+    public var afterSaid: String?
 
-    public init(exercise: String, set: Int, of: Int, weight: Double? = nil, reps: Int? = nil, label: String, rest: Int? = nil) {
+    public init(exercise: String, set: Int, of: Int, weight: Double? = nil, reps: Int? = nil, label: String, rest: Int? = nil,
+                then: [NextSet]? = nil, after: String? = nil) {
         self.exercise = exercise; self.set = set; self.of = of; self.weight = weight; self.reps = reps
-        self.label = label; self.rest = rest
+        self.label = label; self.rest = rest; self.thenSets = then; self.afterSaid = after
     }
 
     /// The label without the exercise's name in front: "set 2 of 4 · 105 × 10".
@@ -52,11 +61,27 @@ public struct NextSet: Codable, Equatable, Hashable, Sendable {
 
     /// What the set after this one is called, for a rest Virt starts itself: "set 3 of Chest press machine", or ""
     /// after the last set.
-    public var after: String { self.set < of ? "set \(self.set + 1) of \(exercise)" : "" }
+    /// When the page says (`after`, or the first of `then`), its words: in a circuit the next exercise's name.
+    public var after: String {
+        if let said = afterSaid { return said }
+        if let then = thenSets {
+            guard let n = then.first else { return "" }
+            return n.exercise == exercise ? "set \(n.set) of \(n.exercise)" : n.exercise
+        }
+        return self.set < of ? "set \(self.set + 1) of \(exercise)" : ""
+    }
 
     /// The set after this one, as the page will most likely name it: the same exercise, the next set, the same weight
     /// and reps (the page carries them forward). nil after the last set (what's next is the page's to say).
+    ///
+    /// When the page said what follows (`then`), that's it, with the ones after it: Virt never guesses then, so in a
+    /// superset or circuit the lock screen names the next exercise of the round, and nothing once the list runs out.
     public var following: NextSet? {
+        if let then = thenSets {
+            guard var n = then.first else { return nil }
+            n.thenSets = Array(then.dropFirst())
+            return n
+        }
         guard self.set < of else { return nil }
         var n = self
         n.set = set + 1
@@ -70,7 +95,9 @@ public struct NextSet: Codable, Equatable, Hashable, Sendable {
         let int = { (d: Double?) -> Int? in d.flatMap { $0.isFinite ? Int($0.rounded()) : nil } }
         self.init(exercise: r.exercise ?? "", set: Int(n.rounded()), of: max(int(r.of) ?? Int(n), Int(n.rounded())),
                   weight: r.weight.flatMap { $0.isFinite ? $0 : nil }, reps: int(r.reps), label: label,
-                  rest: int(r.rest).flatMap { $0 > 0 ? $0 : nil })
+                  rest: int(r.rest).flatMap { $0 > 0 ? $0 : nil },
+                  then: r.then.map { list in list.compactMap { NextSet($0) } },
+                  after: r.after)
     }
 }
 
@@ -78,6 +105,9 @@ public struct NextSet: Codable, Equatable, Hashable, Sendable {
 struct RawNextSet: Decodable {
     var exercise: String?, label: String?
     var set: Double?, of: Double?, weight: Double?, reps: Double?, rest: Double?
+    /// `then`: nil when the page doesn't send it; a list (empty for null or anything odd) when it does.
+    var then: [RawNextSet]?
+    var after: String?
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -85,8 +115,10 @@ struct RawNextSet: Decodable {
         func number(_ k: Key) -> Double? { (try? c.decodeIfPresent(Double.self, forKey: k)) ?? nil }
         exercise = text(.exercise); label = text(.label)
         set = number(.set); of = number(.of); weight = number(.weight); reps = number(.reps); rest = number(.rest)
+        after = text(.after)
+        if c.contains(.then) { then = ((try? c.decodeIfPresent([RawNextSet].self, forKey: .then)) ?? nil) ?? [] }
     }
-    enum Key: String, CodingKey { case exercise, label, set, of, weight, reps, rest }
+    enum Key: String, CodingKey { case exercise, label, set, of, weight, reps, rest, then, after }
 }
 
 public struct TimerStart: Equatable, Sendable {

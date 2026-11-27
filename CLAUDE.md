@@ -119,6 +119,12 @@ Log set (#573): Virt reads `set.next` (and `nextSet` on `timer.start`), the open
 `{ command: 'log', at }`. The Live Activity shows the next set under the rest, and between sets the next set with a big
 Log set; Log set starts the set's rest at once and shows the following set, since the page may be asleep
 (`TimerBoard.logSet`). The same intent is a Control Center control (`LogSetControl`, iOS 18, in the widget extension).
+In a superset or circuit (Nov 27) the page says what follows each set: `nextSet.then` (the sets Log set would log after
+this one, in order: the next exercise of the round, never the same exercise again; empty when a timed exercise or the
+end comes next), `nextSet.after` (what the rest it starts leads to, "Plank") and `rest` (the 15 s switch, or the
+round's rest). Virt shows those instead of guessing (`NextSet.following`); an older page sends neither and Virt
+guesses as before. A rest that reaches zero with no set to log shows what's next in words ("Plank · Rest over · up
+next", `TimerDisplay.restOver`), never a clock left at 0:00.
 Virt already reads an optional
 `upcoming` list on `timer.start` (the steps after this one, each `{ id, kind, label, endsAt }`) and the sound keeper
 plays each of their zeros; until the page sends it, only the running step's zero sounds while the phone is locked.

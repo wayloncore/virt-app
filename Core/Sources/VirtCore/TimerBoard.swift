@@ -245,8 +245,9 @@ public struct TimerBoard: Equatable, Sendable {
     }
 
     /// Log set (#573), before the page hears (it may be asleep while the phone is locked): the set's rest starts at
-    /// once when the plan gives one, and the next set shows as the page will most likely name it (the same exercise,
-    /// one set on), so Log set works again at the rest's zero with the page still asleep. The page logs each tap in
+    /// once when the plan gives one, and the next set shows as the page says it will be (`then`: in a superset or
+    /// circuit, the next exercise of the round) or, from an older page, as it will most likely name it (the same
+    /// exercise, one set on), so Log set works again at the rest's zero with the page still asleep. The page logs each tap in
     /// order, from the moment it was tapped, so its own rest lines up with this one. Nothing to log: nothing happens.
     public mutating func logSet(now: Date) {
         guard workout != nil, let n = nextSet else { return }
