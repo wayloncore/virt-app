@@ -1,91 +1,65 @@
 import XCTest
 @testable import VirtCore
 
-/// The video intro's order of events: launch clip, lock screen, unlock clip, Training.
+/// The video intro's order of events with no lock (Nov 28): launch clip, unlock clip, Training. Nothing waits for Face
+/// ID or the passcode.
 final class IntroFlowTests: XCTestCase {
-    func testLaunchThenLockThenUnlock() {
-        var f = IntroFlow(reduceMotion: false)
-        XCTAssertEqual(f.stage, .launch)
-        XCTAssertFalse(f.showsUnlockButton, "no button over the launch clip")
+    func testLaunchThenUnlockThenTraining() {
+        var f = IntroFlow.atLaunch(liveWorkout: false, reduceMotion: false, sceneRebuilt: false)
+        XCTAssertEqual(f.stage, .launch, "a fresh launch plays the launch clip")
+        XCTAssertTrue(f.playing)
         f.launchEnded()
-        XCTAssertEqual(f.stage, .lock, "the launch clip ends on the lock screen")
-        XCTAssertTrue(f.showsUnlockButton)
-        f.unlocked()
-        XCTAssertEqual(f.stage, .unlock)
-        XCTAssertTrue(f.playingOut)
-        XCTAssertFalse(f.showsUnlockButton)
+        XCTAssertEqual(f.stage, .unlock, "straight on into the unlock clip: nothing to answer on the way")
+        XCTAssertTrue(f.playing)
         f.unlockEnded()
-        XCTAssertEqual(f.stage, .done)
-        XCTAssertFalse(f.playingOut)
+        XCTAssertEqual(f.stage, .done, "then Training")
+        XCTAssertFalse(f.playing)
+        XCTAssertEqual(IntroFlow(), IntroFlow.atLaunch(liveWorkout: false, reduceMotion: false, sceneRebuilt: false))
     }
 
-    func testUnlockedBeforeTheLaunchClipEnds() {
-        var f = IntroFlow(reduceMotion: false)
-        f.unlocked()
-        XCTAssertEqual(f.stage, .launch, "the launch clip finishes its landing first")
-        XCTAssertTrue(f.hurrying)
-        XCTAssertTrue(f.playingOut)
-        XCTAssertFalse(f.showsUnlockButton)
-        f.launchEnded()
-        XCTAssertEqual(f.stage, .unlock, "then straight into the unlock clip, no lock screen")
-        XCTAssertFalse(f.hurrying)
-        f.unlockEnded()
-        XCTAssertEqual(f.stage, .done)
-    }
-
-    func testATapSkipsToTheLockScreen() {
-        var f = IntroFlow(reduceMotion: false)
+    func testATapSkipsTheLaunchClip() {
+        var f = IntroFlow()
         f.skip()
-        XCTAssertEqual(f.stage, .lock)
+        XCTAssertEqual(f.stage, .unlock, "the launch clip's last frame, and the unlock clip from there")
         f.skip()
-        XCTAssertEqual(f.stage, .lock, "a skip on the lock screen does nothing")
-    }
-
-    func testReduceMotionHasNoClips() {
-        var f = IntroFlow(reduceMotion: true)
-        XCTAssertEqual(f.stage, .lock, "straight to the lock screen")
-        f.unlocked()
-        XCTAssertEqual(f.stage, .done, "straight to Training")
-        f.relocked()
-        XCTAssertEqual(f.stage, .lock)
-        f.unlocked()
+        XCTAssertEqual(f.stage, .unlock, "a tap during the unlock clip does nothing")
+        f.unlockEnded()
         XCTAssertEqual(f.stage, .done)
     }
 
-    func testRelockShowsTheLockScreenWithNoLaunchClip() {
-        var f = IntroFlow(reduceMotion: false)
-        f.launchEnded(); f.unlocked(); f.unlockEnded()
-        f.relocked()
-        XCTAssertEqual(f.stage, .lock)
-        f.unlocked()
-        XCTAssertEqual(f.stage, .unlock, "the unlock clip still plays")
+    func testNoClipDuringALiveWorkoutWithReduceMotionOrForASceneBuiltAgain() {
+        for (live, reduce, rebuilt) in [(true, false, false), (false, true, false), (false, false, true), (true, true, true)] {
+            let f = IntroFlow.atLaunch(liveWorkout: live, reduceMotion: reduce, sceneRebuilt: rebuilt)
+            XCTAssertEqual(f.stage, .done, "straight into Training: live \(live), Reduce Motion \(reduce), rebuilt \(rebuilt)")
+            XCTAssertFalse(f.playing)
+        }
     }
 
-    func testGoingAwayMidClip() {
-        var f = IntroFlow(reduceMotion: false)
-        f.interrupted(locked: true)
-        XCTAssertEqual(f.stage, .lock, "the launch clip doesn't resume; the lock screen is there")
+    func testGoingAwayMidClipComesBackToTraining() {
+        var f = IntroFlow()
+        f.interrupted()
+        XCTAssertEqual(f.stage, .done, "the launch clip doesn't resume")
 
-        var g = IntroFlow(reduceMotion: false)
-        g.launchEnded(); g.unlocked()
-        g.interrupted(locked: false)
-        XCTAssertEqual(g.stage, .done, "already unlocked: straight to Training")
+        var g = IntroFlow()
+        g.launchEnded()
+        g.interrupted()
+        XCTAssertEqual(g.stage, .done, "nor the unlock clip")
 
-        var h = IntroFlow(reduceMotion: false)
-        h.unlocked()
-        h.interrupted(locked: false)
-        XCTAssertEqual(h.stage, .done)
-        XCTAssertFalse(h.hurrying)
-
-        var i = IntroFlow(reduceMotion: false)
-        i.launchEnded()
-        i.interrupted(locked: true)
-        XCTAssertEqual(i.stage, .lock, "nothing playing: no change")
+        var h = IntroFlow.atLaunch(liveWorkout: true, reduceMotion: false, sceneRebuilt: false)
+        h.interrupted()
+        XCTAssertEqual(h.stage, .done, "already in Training: no change")
     }
 
-    func testUnlockEndedOnlyEndsTheUnlockClip() {
-        var f = IntroFlow(reduceMotion: false)
+    func testEachEndOnlyEndsItsOwnClip() {
+        var f = IntroFlow()
         f.unlockEnded()
-        XCTAssertEqual(f.stage, .launch)
+        XCTAssertEqual(f.stage, .launch, "the unlock clip's end can't cut the launch clip short")
+        var d = IntroFlow.atLaunch(liveWorkout: false, reduceMotion: true, sceneRebuilt: false)
+        d.launchEnded()
+        XCTAssertEqual(d.stage, .done, "a late end of a clip never brings one back")
+    }
+
+    func testTheStagesTheTestBuildReports() {
+        XCTAssertEqual([IntroFlow.Stage.launch, .unlock, .done].map(\.rawValue), ["launch", "unlock", "done"])
     }
 }

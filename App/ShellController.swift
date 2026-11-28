@@ -544,7 +544,6 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
         case .setSounds(let on): hub.setSounds(on)
         case .setSoundStyle(let st): hub.setStyle(st, preview: SoundBoard.shared.enabled && st != SoundBoard.shared.style)
         case .setReminders(let on): hub.setRemindersFromPage(on)
-        case .setLockAfter(let l): hub.setLockAfter(l)
         case .openNotificationSettings: hub.openNotificationSettings()
         case .signOut, .deleteAccount:
             let ask = AccountAsk.decide(r, door: door, owner: friendSession?.isOwner == true, guest: guest,
@@ -1026,7 +1025,7 @@ final class ShellController: UIViewController, WKNavigationDelegate, WKUIDelegat
             + " · door \(door?.rawValue ?? (doorsHost != nil ? "asking" : "none"))\(guest ? " guest" : "")"
             + " · page \(String((web?.url?.absoluteString ?? "none").prefix(48)))"
             + " · bundle \(BundleStore.shared.active?.version ?? "none")\(BundleStore.shared.note)"
-            + " · lock \(LockAfter(stored: UserDefaults.standard.string(forKey: LockAfter.key)).rawValue) · prefs sent \(PrefsHub.shared.sent)"
+            + " · prefs sent \(PrefsHub.shared.sent)"
             + " · style \(SoundBoard.shared.style.rawValue)"
         view.bringSubviewToFront(l.superview ?? l)
     }

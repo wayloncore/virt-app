@@ -7,28 +7,26 @@ final class PrefsTests: XCTestCase {
     func json(_ s: String) -> Data { s.data(using: .utf8)! }
 
     let standard = AppPrefs(sounds: true, soundStyle: .chime, reminders: true, reminderLine: "6:00 PM on Mon, Tue and Thu",
-                            lockAfter: .fifteenMinutes, notifications: true)
+                            notifications: true)
 
     // MARK: - The object
 
     func testThePrefsObject() {
         XCTAssertEqual(standard.json,
-                       #"{"sounds":true,"soundStyle":"chime","reminders":true,"reminderLine":"6:00 PM on Mon, Tue and Thu","lockAfter":"15m","notifications":"on","soundStyles":"# + SoundStyle.listJSON + "}")
+                       #"{"sounds":true,"soundStyle":"chime","reminders":true,"reminderLine":"6:00 PM on Mon, Tue and Thu","notifications":"on","soundStyles":"# + SoundStyle.listJSON + "}")
         let off = AppPrefs(sounds: false, soundStyle: .classic, reminders: false, reminderLine: "6:00 PM every day",
-                           lockAfter: .never, notifications: false)
+                           notifications: false)
         XCTAssertEqual(off.json,
-                       #"{"sounds":false,"soundStyle":"classic","reminders":false,"reminderLine":"","lockAfter":"never","notifications":"off","soundStyles":"# + SoundStyle.listJSON + "}",
+                       #"{"sounds":false,"soundStyle":"classic","reminders":false,"reminderLine":"","notifications":"off","soundStyles":"# + SoundStyle.listJSON + "}",
                        "the line is empty while reminders are off")
         // it's real JSON, with exactly the contract's keys and value types
         let o = try! JSONSerialization.jsonObject(with: json(standard.json)) as! [String: Any]
-        XCTAssertEqual(Set(o.keys), ["sounds", "soundStyle", "reminders", "reminderLine", "lockAfter", "notifications", "soundStyles"])
+        XCTAssertEqual(Set(o.keys), ["sounds", "soundStyle", "reminders", "reminderLine", "notifications", "soundStyles"])
         XCTAssertEqual(o["sounds"] as? Bool, true)
-        XCTAssertEqual(o["lockAfter"] as? String, "15m")
-        for l in LockAfter.allCases {
-            var p = standard; p.lockAfter = l
-            XCTAssertTrue(p.json.contains("\"lockAfter\":\"\(l.rawValue)\""))
-        }
-        XCTAssertEqual(LockAfter.allCases.map(\.rawValue), ["now", "15m", "1h", "never"], "the contract's values")
+        // no lock since Nov 28: no lockAfter, which the website reads as "this app has no lock" (no Lock and privacy row)
+        XCTAssertNil(o["lockAfter"])
+        XCTAssertFalse(standard.json.contains("lockAfter"))
+        XCTAssertFalse(standard.eventScript.contains("lockAfter"), "nor in the kinetic:prefs event")
         let ids = SoundStyle.allCases.map(\.rawValue)
         for old in ["chime", "digital", "classic"] { XCTAssertTrue(ids.contains(old), "stored values from before still read: \(old)") }
         // the full list, in display order, with names and groups
@@ -88,15 +86,11 @@ final class PrefsTests: XCTestCase {
                            .setSoundStyle(s), "any id in soundStyles: \(s.rawValue)")
         }
         XCTAssertEqual(AppRequest.decode(json(#"{"type":"pref","key":"reminders","value":true}"#)), .setReminders(true))
-        for l in LockAfter.allCases {
-            XCTAssertEqual(AppRequest.decode(json(#"{"type":"pref","key":"lockAfter","value":"\#(l.rawValue)"}"#)), .setLockAfter(l))
-        }
         XCTAssertEqual(AppRequest.decode(json(#"{"type":"openNotificationSettings"}"#)), .openNotificationSettings)
         XCTAssertEqual(AppRequest.decode(json(#"{"type":"deleteAccount"}"#)), .deleteAccount)
         XCTAssertEqual(AppRequest.decode(json(#"{"type":"signOut","extra":1}"#)), .signOut, "more fields still read")
-        XCTAssertEqual(AppRequest.decode(object: ["type": "pref", "key": "lockAfter", "value": "never"]), .setLockAfter(.never),
+        XCTAssertEqual(AppRequest.decode(object: ["type": "pref", "key": "sounds", "value": false]), .setSounds(false),
                        "as WebKit hands it over")
-        XCTAssertEqual(AppRequest.decode(object: ["type": "pref", "key": "sounds", "value": false]), .setSounds(false))
     }
 
     func testUnknownKeysAndOutOfRangeValuesAreIgnored() {
@@ -126,6 +120,17 @@ final class PrefsTests: XCTestCase {
         XCTAssertFalse(AppRequest.isRequest(object: ["type": "settings"]), "the sheet's own message stays as it was")
         XCTAssertFalse(AppRequest.isRequest(object: ["type": "today"]))
         XCTAssertFalse(AppRequest.isRequest(object: "signOut"))
+    }
+
+    /// An older page (before the website's no-lock change) can still post Lock after. Virt has no lock: every value is
+    /// ignored quietly, and it's still a pref, so it never reaches the Engine either.
+    func testAnOlderPagesLockAfterIsIgnored() {
+        for v in ["now", "15m", "1h", "never"] {
+            let m = #"{"type":"pref","key":"lockAfter","value":""# + v + #""}"#
+            XCTAssertNil(AppRequest.decode(json(m)), m)
+            XCTAssertNil(AppRequest.decode(object: ["type": "pref", "key": "lockAfter", "value": v]), "as WebKit hands it over: \(v)")
+            XCTAssertTrue(AppRequest.isRequest(object: ["type": "pref", "key": "lockAfter", "value": v]), "never an Engine message")
+        }
     }
 
     func testOnlyTrainingsOwnMainFrameMayAsk() {

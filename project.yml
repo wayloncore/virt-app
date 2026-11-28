@@ -50,7 +50,8 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        CFBundleDisplayName: Virt timer
+        # the home screen name (the build setting below says the same; "Virt timer" is the widget extension's own name)
+        CFBundleDisplayName: Virt
         ITSAppUsesNonExemptEncryption: false
         # the Live Activity (the timer on the lock screen and in the Dynamic Island)
         NSSupportsLiveActivities: true
@@ -64,10 +65,11 @@ targets:
           UIColorName: LaunchBlack
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIRequiresFullScreen: true
-        NSCameraUsageDescription: "Virt uses the camera only when you take a photo for a studio page."
+        # kept for a page's photo picker (iOS offers Take Photo there, and needs this to open the camera); no page in
+        # Virt asks for one today
+        NSCameraUsageDescription: "Virt uses the camera only when you choose to take a photo."
         NSPhotoLibraryAddUsageDescription: "Virt saves a picture you share from Training to your photos only when you ask."
-        # the Face ID lock (App/Lock.swift)
-        NSFaceIDUsageDescription: "Virt uses Face ID to keep your training private."
+        # no Face ID key: Virt has no lock of its own (Nov 28). Sign in with Apple's sheet is Apple's and needs none.
         # virt://today (the widgets), virt://start, virt://rest?seconds=90, virt://settings
         CFBundleURLTypes:
           - CFBundleURLName: com.tyleralocke.virt

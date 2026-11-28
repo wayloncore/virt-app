@@ -29,12 +29,13 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
 - `App/Intents.swift`: Siri, Shortcuts and the Action button (Start my workout; Start a rest timer). `App/Reminders.swift`:
   training-day reminders. `App/Sound.swift` and `App/Sounds/`: the sounds (`App/BackgroundSound.swift`: the zero sound while locked) (`LICENSES.md` says where each came from;
   `.github/workflows/sounds.yml` and `scripts/sounds.py` make them). `App/SettingsView.swift`: Virt's own settings and
-  tips sheet. `App/Intro.swift`: the video intro and the Face ID lock screen's picture (VirtCore's `IntroFlow` is
-  its order of events): the launch clip plays on a fresh launch while Face ID asks and ends on the large V, which is
-  the lock screen (`App/Intro/VirtLock.png` is the clip's exact last frame); Face ID's yes plays the unlock clip into
-  black, then Training fades in. No sound; with Reduce Motion, no video. The clips in `App/Intro/` are made from
-  Tyler's Kling clips by `scripts/intro_video.py` (trims and speeds are in its comments); the launch screen, the intro
-  and the lock screen are pure black (#000), the rest of the app keeps its own black.
+  tips sheet. `App/Intro.swift`: the video intro (VirtCore's `IntroFlow` is its order of events; `App/Cover.swift`
+  drives it): on a fresh launch the launch clip plays and ends on the large V (`App/Intro/VirtLock.png` is the clip's
+  exact last frame), the unlock clip flies straight on into black, then Training fades in. A tap skips the launch
+  clip. No sound; with Reduce Motion, no video. The clips in `App/Intro/` are made from Tyler's Kling clips by
+  `scripts/intro_video.py` (trims and speeds are in its comments); the launch screen, the intro and the app
+  switcher's cover are pure black (#000), the rest of the app keeps its own black. **Virt has no lock of its own**
+  (below).
 - The web view is bound to the studio's domains (Info.plist `WKAppBoundDomains`, the same list as
   `Navigation.appBoundDomains`), which is what lets Training's service worker run in the app. A main-frame page outside
   them opens in Safari.
@@ -48,14 +49,14 @@ How to work with Tyler is in the website repo's `CLAUDE.md` (wayloncore/tyleralo
   ASC_KEY_P8, the same key as time2play-app, so the two apps share one distribution certificate).
 - App icon: `App/Assets.xcassets/AppIcon.appiconset` (the gold nested V on black, 1024 × 1024, no alpha). Colors (v3, #746): graphite `#15171B`, the one action red
   `#FF4B3A` and done-green `#59CF8B`, matching the website's v3 tokens; gold `#DFC297` (sampled from the icon) is the mark
-  and records only. The launch, intro and lock screens stay pure black with the gold V.
+  and records only. The launch screen, the intro and the app switcher's cover stay pure black with the gold V.
 
 ## The two doors (#578 part 2, #580)
 The first screen on a new phone (`App/Account.swift`, `DoorsView`) asks which way in; the choice is saved
 (`virt.door` in UserDefaults) and Settings' "Switch sign-in" goes back to it.
-- **Tyler's studio:** Cloudflare Access, then studio Training: exactly the path from before doors (Face ID,
-  `CookieKeeper`). A phone that used Virt before doors (a studio sign-in, a saved `today`, his settings) opens it
-  without asking (`Door.resolve`).
+- **Tyler's studio:** Cloudflare Access, then studio Training: exactly the path from before doors (`CookieKeeper`).
+  A phone that used Virt before doors (a studio sign-in, a saved `today`, his settings) opens it without asking
+  (`Door.resolve`).
 - **Training for friends:** the 13+ question, Sign in with Apple (`com.apple.developer.applesignin`; `asc.py ready`
   turns the capability on), `POST tyleralocke.com/live/players/apple` (the Time2Play accounts server), the session in
   this phone's Keychain (`FriendKeeper`, service `com.tyleralocke.virt.friend`), then train.time2play.live with the
@@ -132,20 +133,23 @@ plays each of their zeros; until the page sends it, only the running step's zero
 One press is one set (Nov 24, VirtCore's `LogPress`): presses within 0.6 s count once, nothing is sent when Virt's
 board has no next set, and each `log` carries its own `id` (`{ command: 'log', at, id }`, additive) so the page can drop
 a repeat. The board is kept on the phone (`virt.board` in UserDefaults) so a press that wakes Virt after iOS ended it
-still knows the set. `today` may carry `live: true/false` (a workout is open on the page); Virt reads it for the lock
-(`LiveWorkout`), and falls back to the 45-minute rule without it.
+still knows the set. `today` may carry `live: true/false` (a workout is open on the page); Virt reads it
+(`LiveWorkout`: no launch clip during a live workout, the sound keeper, no new bundle mid-workout), and falls back to
+the 45-minute rule without it.
 Settings through the bridge (the You tab; VirtCore's `Prefs.swift`, the app's `App/Prefs.swift`; the website documents
 the same contract in its docs/kinetic/bridge.md). All additive:
 - Before the page's scripts, every load: `kineticApp.prefs = { sounds: bool, soundStyle: <any id in soundStyles>,
-  reminders: bool, reminderLine: '6:00 PM on Mon, Tue and Thu' ('' when off or not known), lockAfter:
-  'now'|'15m'|'1h'|'never', notifications: 'on'|'off', soundStyles: [{ id, name, group }] }` ('off' only when iOS has them off; never asked
-  reads 'on'). `soundStyles` (Nov 27) is every style in display order, from VirtCore's `SoundStyle` (tested), so the page
+  reminders: bool, reminderLine: '6:00 PM on Mon, Tue and Thu' ('' when off or not known), notifications:
+  'on'|'off', soundStyles: [{ id, name, group }] }` ('off' only when iOS has them off; never asked reads 'on'). No
+  `lockAfter` since Nov 28 (Virt has no lock): the website reads it as optional, and absent means no Lock and privacy
+  row on You (builds up to 100 still send it). `soundStyles` (Nov 27) is every style in display order, from VirtCore's `SoundStyle` (tested), so the page
   never keeps its own copy. Since the tone styles went (Nov 27), every `group` is "" (one plain list, no title; the
   field stays for the page).
   The page decides what to show by whether `kineticApp.prefs` exists.
 - `kinetic:prefs` on `window` (CustomEvent, `detail` = the same object, and `kineticApp.prefs` updated in place)
   whenever one changes, from the page or Virt's sheet, and each time Virt comes forward.
-- The page posts `{ type: 'pref', key: 'sounds'|'soundStyle'|'reminders'|'lockAfter', value }`,
+- The page posts `{ type: 'pref', key: 'sounds'|'soundStyle'|'reminders', value }` (an older page's `lockAfter` is
+  ignored quietly, like any key Virt doesn't know),
   `{ type: 'openNotificationSettings' }`, `{ type: 'deleteAccount' }` (the sheet's own confirmation still asks; a
   friend's door only, never a guest) and `{ type: 'signOut' }` (the sheet's confirmation; waits during a workout).
   Unknown keys and values are ignored; only from Training's own main frame. Virt's sheet stays, on the same values.
@@ -155,7 +159,7 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   with it, awake only on the workout screen (a countdown, or a sign of the workout within 45 minutes); without it,
   only while a countdown is running.
 
-## Lock-screen buttons, alerts and the lock (Nov 24)
+## Lock-screen buttons, alerts, the intro and the cover (Nov 24; no app lock since Nov 28)
 - The Live Activity's buttons and Control Center's Log set are `TimerCommandIntent`, a `LiveActivityIntent` and an
   `AudioPlaybackIntent` (the kind music apps' lock-screen buttons use; Nov 25) that says outright it runs while locked
   (`authenticationPolicy = .alwaysAllowed`), never opens the app (`openAppWhenRun = false`; iOS 26 `supportedModes =
@@ -223,10 +227,22 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   The 14 tone styles of #27 (Digital up to Quest jingle) and their files are gone. A phone that saved one reads it back
   as Digital (`digital-up`) or Chime (`SoundStyle(stored:)`, `SoundStyle.removed`); the page is only ever told a kept
   id, and its own check falls back to Chime for an id it doesn't know. The zeros play at full player volume.
-- The lock: the cover shows only in the background (not for Control Center, Notification Center or the Face ID sheet)
-  and lifts on return; never a lock or the launch clip while a workout is live (remembered across a launch,
-  `virt.workout.live`); the lock is the app's, not the scene's; "Lock after" in Virt's settings (`lock.after`: Right
-  away, 15 minutes, 1 hour, Never).
+- **No app lock** (Tyler, Nov 28: "Do we even need the Face ID unlock? Do we even need an app lock? ... Remove that
+  rewire everything properly"; "the phone might need the Face ID to log in with Apple, but not to log into the app
+  ever"). Virt never asks for Face ID or the passcode to open, on any phone: no LocalAuthentication, no
+  `NSFaceIDUsageDescription`, no "Lock after" (VirtCore's `NoAppLockTests` checks the sources). Sign in with Apple's own
+  sheet is Apple's and may use Face ID; that's untouched. Why: the lock made Virt impossible to open on a phone with no
+  passcode, it was an App Review risk (the website's docs/virt/app-store/listing.md, blocker 3), and it was behind the
+  flaky intro test. Build 100's stored setting (`lock.after` in UserDefaults) stays on the phone, never read and never
+  cleared, so a rollback to build 100 still finds it.
+- `App/Cover.swift` (`AppCover`): one window above Training's for the intro and the cover. A fresh launch plays the
+  launch clip, then the unlock clip, then Training fades in, with Training loading underneath (VirtCore's
+  `IntroFlow`). Straight into Training, no clip: while a workout is live (remembered across a launch,
+  `virt.workout.live`, VirtCore's `LiveWorkout`), with Reduce Motion, and for a scene iOS builds again. A signed-out
+  phone gets the same intro before its first screen, as before (decided Nov 28: one path for everyone, and it ends on
+  black, where the first screen starts). The cover (the V on black) shows only in the background, so the app
+  switcher's picture never shows Training (not for Control Center or Notification Center), and lifts on return with
+  nothing to answer.
 
 ## Testing
 - **Linux:** `core.yml` runs on push. Locally, if Swift is installed: `cd Core && swift test`.
@@ -236,7 +252,10 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   Report how many runs and minutes each session used.
 - The UI tests can't sign in to the studio (Access sends a one-time PIN by email), so they check that the sign-in
   opens inside the app, and test the bridge with a stand-in page that talks exactly like Training. The test build
-  (Debug, `-uitest`) shows a status line and command buttons; Release builds have neither.
+  (Debug, `-uitest`) shows a status line and command buttons; Release builds have neither. Each test's launch waits
+  for the intro to play into the app by itself (`intro` is the intro window's identifier; the status line's
+  `intro launch>unlock>done` is its order); `testAFreshLaunchGoesStraightIntoTraining` checks there's nothing to
+  answer on the way.
 
 ## Rules
 - **Health data never reaches any AI.** No AI anywhere in Virt. Nothing about workouts leaves the phone except to the

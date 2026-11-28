@@ -384,10 +384,10 @@ public struct TimerBoard: Equatable, Sendable {
         return c.upcoming.contains { e.addingTimeInterval($0.after) > now }
     }
 
-    /// True while a workout is going, so coming back to the app doesn't ask for Face ID (`LockPolicy`): a countdown is
-    /// running and hasn't reached zero, or a workout or timer is up and there's been a sign of it within `quietLimit`
-    /// (a message from the page, a lock-screen button, or a countdown reaching zero). A workout or paused timer left
-    /// open for longer than that doesn't count, so the lock still comes.
+    /// True while a workout is going: a countdown is running and hasn't reached zero, or a workout or timer is up and
+    /// there's been a sign of it within `quietLimit` (a message from the page, a lock-screen button, or a countdown
+    /// reaching zero). A workout or paused timer left open for longer than that doesn't count. It's the 45-minute rule
+    /// behind `LiveWorkout` when the page doesn't say `live`, and it holds sign out and the sound keeper to the workout.
     public func midWorkout(now: Date) -> Bool {
         if let c = countdown, !c.paused, let e = c.endsAt, e > now { return true }
         guard workout != nil || countdown != nil else { return false }

@@ -33,7 +33,7 @@ final class SoundStyleTests: XCTestCase {
             XCTAssertNil(SoundStyle(rawValue: id), "\(id) is gone")
         }
         let prefs = AppPrefs(sounds: true, soundStyle: SoundStyle(stored: "quest-jingle"), reminders: false, reminderLine: "",
-                             lockAfter: .fifteenMinutes, notifications: true)
+                             notifications: true)
         XCTAssertTrue(prefs.json.contains("\"soundStyle\":\"chime\""), prefs.json)
     }
 

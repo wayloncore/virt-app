@@ -1,11 +1,13 @@
 import Foundation
 
-/// Whether a workout is live, for the lock (Face ID never asks, and the launch clip never plays, while one is).
+/// Whether a workout is live: the launch clip never plays while one is (Virt opens straight into it, App/Cover.swift),
+/// the sound keeper plays its zeros with the phone locked, and a new set of Training's screens waits. Virt has no lock
+/// of its own since Nov 28; this used to keep Face ID away mid-workout too.
 ///
 /// - A countdown running toward its zero is always live.
 /// - The page says so on `today` (`live: true / false`, an optional addition from the website). Its word counts for
 ///   `trustLimit` after the last sign of the workout (the page's word itself, any page message, a lock-screen button),
-///   so a page that was closed without saying `false` doesn't keep the lock away for ever.
+///   so a page that was closed without saying `false` doesn't count as live for ever.
 /// - A page that doesn't say: Virt's own rule, `TimerBoard.midWorkout` (45 minutes after the last sign).
 ///
 /// The answer is kept on the phone (`Memory`) so a launch after iOS ended the app, or a scene iOS built again, goes

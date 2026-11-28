@@ -32,7 +32,6 @@ struct SettingsView: View {
     @State private var deleting = false
     @State private var deleteNote: String?
 
-    @State private var lockAfter = LockAfter(stored: UserDefaults.standard.string(forKey: LockAfter.key))
     @State private var soundsOn = SoundBoard.shared.enabled
     @State private var style = SoundBoard.shared.style
     @State private var remindersOn = Reminders.shared.enabled == true
@@ -93,20 +92,6 @@ struct SettingsView: View {
                     Text("Sign-in")
                 } footer: {
                     Text(signInFooter)
-                }
-
-                Section {
-                    Picker("Lock after", selection: $lockAfter) {
-                        ForEach(LockAfter.allCases, id: \.self) { Text($0.name).tag($0) }
-                    }
-                    .onChange(of: lockAfter) { _, l in PrefsHub.shared.setLockAfter(l) }
-                    .accessibilityIdentifier("lock-after")
-                } header: {
-                    Text("Face ID")
-                } footer: {
-                    Text(lockAfter == .never
-                         ? "Virt opens without Face ID. Anyone holding this unlocked iPhone can see your training."
-                         : "Face ID asks when you come back to Virt after this long away. Never in the middle of a workout.")
                 }
 
                 Section {

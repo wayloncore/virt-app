@@ -4,21 +4,22 @@ import UIKit
 import VirtCore
 
 /// The video intro (Tyler's Kling clips, Nov 18; App/Intro/, made by scripts/intro_video.py). It replaces the drawn
-/// wordmark intro of Nov 17. The order of events is VirtCore's `IntroFlow`; this plays it:
+/// wordmark intro of Nov 17. The order of events is VirtCore's `IntroFlow`; App/Cover.swift drives it and this plays it:
 ///
-/// - the launch clip (VIRT, the I, R and T wipe away, the V grows; about 4 s) on a fresh launch, while Face ID asks;
-/// - the lock screen: the launch clip's last frame (VirtLock.png is that exact frame, so the V never jumps);
-/// - the unlock clip (the camera flies into the V until it's black; about 1.7 s) when Face ID says yes.
+/// - the launch clip (VIRT, the I, R and T wipe away, the V grows; about 4 s) on a fresh launch. It ends on the large V
+///   (VirtLock.png is that exact frame, so the V never jumps);
+/// - straight on, the unlock clip (the camera flies into the V until it's black; about 1.7 s), then Training fades in.
+///   Nothing waits for Face ID or the passcode: Virt has no lock of its own since Nov 28.
 ///
 /// The clips and the still are on pure black and are all drawn the same way (fit to the screen's width, centered), so
 /// they line up exactly. The launch clip and the still are 1080 x 1920; the unlock clip is drawn on a taller 1080 x 2400
 /// canvas so its fly-in runs off the real screen's top and bottom (its first frame is the still's, with black above
-/// and below, off screen). No sound: the clips have no audio track and the players are muted. With
-/// Reduce Motion nothing plays: the still fades in, and unlocking fades straight to Training.
+/// and below, off screen). No sound: the clips have no audio track and the players are muted. With Reduce Motion
+/// nothing plays: Virt opens straight into Training.
 @MainActor final class IntroPlayback {
-    /// The lock screen's V: the launch clip's last frame.
+    /// The V on black: the launch clip's last frame, under the clips and as the app switcher's cover.
     static let still = UIImage(named: "VirtLock")
-    /// How long the window takes to fade into Training after the unlock clip (or straight away with Reduce Motion).
+    /// How long the intro's window takes to fade into Training after the unlock clip.
     static let fadeToTraining: TimeInterval = 0.3
 
     let view = IntroStageView()
@@ -33,7 +34,7 @@ import VirtCore
     private var readyWatch: NSKeyValueObservation?
     private var statusWatches: [NSKeyValueObservation] = []
     /// Each clip's safety net: if a clip fails or never says it reached its end, it counts as ended a moment after it
-    /// should have, so the lock window can never be left stuck on a clip. A new play or a stop cancels the old one.
+    /// should have, so the intro's window can never be left stuck on a clip. A new play or a stop cancels the old one.
     private var launchToken = 0
     private var unlockToken = 0
     static let launchLength: TimeInterval = 4.0
@@ -120,16 +121,7 @@ import VirtCore
         }
     }
 
-    /// Face ID said yes partway through: the rest of the V landing, quickly.
-    func hurryLaunch() {
-        guard let launch, launchStarted else { return onLaunchEnded?() ?? () }
-        let rate = launch.currentItem?.canPlayFastForward == false ? 2 : IntroFlow.hurryRate
-        launch.rate = rate
-        let left = max(0, Self.launchLength - launch.currentTime().seconds)
-        launchSafetyNet(after: left / Double(rate) + 1.0)
-    }
-
-    /// A tap: straight to the launch clip's last frame, which is the lock screen.
+    /// A tap: straight to the launch clip's last frame, the V (the unlock clip plays from there).
     func skipLaunch() {
         guard let launch, launchStarted else { return }
         launchToken += 1
@@ -142,15 +134,10 @@ import VirtCore
         }
     }
 
-    /// The launch clip is over: it holds its last frame (the still is the same frame, underneath).
-    func holdLaunchEnd() {
-        view.show(still: true, launch: launchStarted, unlock: false)
-    }
-
     // MARK: - The unlock clip
 
-    /// Plays the unlock clip (or, in the test build, holds it still `frozenAt` seconds in). Its first frame is the
-    /// lock screen's own, so it can start over the V without a jump; its layer shows once that frame is ready.
+    /// Plays the unlock clip (or, in the test build, holds it still `frozenAt` seconds in). Its first frame is the launch
+    /// clip's last, the V, so it starts over it without a jump; its layer shows once that frame is ready.
     func playUnlock(frozenAt: TimeInterval? = nil) {
         guard let unlock else { return onUnlockEnded?() ?? () }
         launch?.pause()
@@ -181,9 +168,9 @@ import VirtCore
 
     // MARK: - The still
 
-    /// The lock screen's V alone, with nothing playing: locked again after time away, the app switcher's cover, or
-    /// after the app went to the background mid-clip. Each clip starts over from its beginning next time.
-    func showStill(animated: Bool = false) {
+    /// The V alone, with nothing playing: the app switcher's cover, Training opened straight in, or after the app went
+    /// to the background mid-clip. Each clip starts over from its beginning next time.
+    func showStill() {
         launch?.pause()
         unlock?.pause()
         readyWatch = nil
@@ -192,10 +179,6 @@ import VirtCore
         launchStarted = false
         unlockStarted = false
         view.show(still: true, launch: false, unlock: false)
-        if animated {
-            view.still.alpha = 0
-            UIView.animate(withDuration: 0.4) { self.view.still.alpha = 1 }
-        }
         unlock?.seek(to: .zero)
     }
 }
@@ -209,7 +192,7 @@ final class IntroStageView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .lockBlack
+        backgroundColor = .introBlack
         isUserInteractionEnabled = false
         still.contentMode = .scaleAspectFit
         still.isHidden = true
@@ -252,7 +235,7 @@ final class IntroStageView: UIView {
     }
 }
 
-/// The intro's picture in the lock screen's SwiftUI view.
+/// The intro's picture in the intro window's SwiftUI view (App/Cover.swift).
 struct IntroStage: UIViewRepresentable {
     let playback: IntroPlayback
     func makeUIView(context: Context) -> IntroStageView { playback.view }
@@ -260,11 +243,11 @@ struct IntroStage: UIViewRepresentable {
 }
 
 extension UIColor {
-    /// The launch screen, the intro and the lock screen: pure black, to match the clips. The rest of the app keeps
-    /// `virtBlack`.
-    static let lockBlack = UIColor.black
+    /// The launch screen, the intro and the app switcher's cover: pure black, to match the clips. The rest of the app
+    /// keeps `virtBlack`.
+    static let introBlack = UIColor.black
 }
 
 extension Color {
-    static let lockBlack = Color.black
+    static let introBlack = Color.black
 }
