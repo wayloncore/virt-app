@@ -128,12 +128,14 @@ final class LockScreenFixTests: XCTestCase {
     // MARK: - The green light
 
     func testGreenLightLandsOnTheZero() {
-        XCTAssertEqual(SoundStyle.chime.lead(.go), 1.2)
-        XCTAssertEqual(SoundStyle.digital.lead(.go), 1.2)
-        XCTAssertEqual(SoundStyle.chime.lead(.rest), 0)
-        XCTAssertEqual(SoundStyle.classic.lead(.go), 0)
-        XCTAssertEqual(LeadIn.ticks(zero: s(60), now: s(0), length: 60, lead: 1.2), [], "its own three tones are the lead-in")
-        XCTAssertEqual(LeadIn.ticks(zero: s(60), now: s(0), length: 60, lead: 0), [s(57), s(58), s(59)])
+        // Nov 27 (build 95): every zero's count-in starts 3 s before it; the green light's tones are its own
+        XCTAssertEqual(SoundStyle.chime.lead(.go), 3)
+        XCTAssertEqual(SoundStyle.digital.lead(.go), 3)
+        XCTAssertEqual(SoundStyle.chime.lead(.rest), 3)
+        XCTAssertEqual(SoundStyle.classic.lead(.go), 3)
+        XCTAssertNil(SoundStyle.chime.countInTick(.go), "its own three tones are the count-in")
+        XCTAssertEqual(SoundStyle.chime.countInTick(.rest), "virt-chime-tick.caf")
+        XCTAssertEqual(LeadIn.ticks(zero: s(60), now: s(0), length: 60), [s(57), s(58), s(59)])
     }
 
     // MARK: - Live workouts and the lock

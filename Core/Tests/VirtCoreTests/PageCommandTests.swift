@@ -88,8 +88,8 @@ final class PageCommandTests: XCTestCase {
         XCTAssertEqual(SoundCue.zero(after: .intervalRest), .go)
         XCTAssertEqual(SoundCue.zero(after: .work), .rest)
         XCTAssertEqual(SoundCue.zero(after: .hold), .rest)
-        XCTAssertEqual(SoundStyle.chime.file(.go), "virt-start-go.caf", "the green light when a rest ends")
-        XCTAssertEqual(SoundStyle.digital.file(.go), "virt-start-go.caf")
+        XCTAssertEqual(SoundStyle.chime.file(.go), "virt-start-go-3s.caf", "the green light when a rest ends")
+        XCTAssertEqual(SoundStyle.digital.file(.go), "virt-start-go-3s.caf")
         XCTAssertEqual(SoundStyle.chime.file(.rest), "virt-chime-rest.caf")
         XCTAssertEqual(SoundStyle.classic.file(.go), "virt-chime.wav", "Classic keeps its one chime")
         XCTAssertEqual(SoundStyle.digital.file(.leadIn), "virt-digital-tick.caf")
@@ -105,7 +105,8 @@ final class PageCommandTests: XCTestCase {
     func testLeadIn() {
         XCTAssertEqual(LeadIn.ticks(zero: s(60), now: s(0), length: 60), [s(57), s(58), s(59)])
         XCTAssertEqual(LeadIn.ticks(zero: s(60), now: s(57.5), length: 60), [s(58), s(59)])
-        XCTAssertEqual(LeadIn.ticks(zero: s(5), now: s(0), length: 5), [], "too short for a lead-in")
+        XCTAssertEqual(LeadIn.ticks(zero: s(5), now: s(0), length: 5), [s(2), s(3), s(4)],
+                       "a short countdown still gets its count-in (Nov 27: no 8-second floor any more)")
         XCTAssertEqual(LeadIn.ticks(zero: s(60), now: s(0), length: nil).count, 3)
     }
 }

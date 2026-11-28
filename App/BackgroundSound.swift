@@ -8,6 +8,12 @@ import VirtCore
 /// running with a silent loop (the `audio` background mode), and schedules each zero's sound with
 /// `AVAudioPlayer.play(atTime:)`. Engine tells it what's ahead on every timer change.
 ///
+/// Each zero's sound includes its three-second count-in (Tyler, Nov 27: "start it around 3 seconds not 1 second"):
+/// one player per zero, built by `CountInSound` (App/Sound.swift) from the style's tick and zero sound, so its beats
+/// and its zero are exactly a second apart whatever the phone is doing. It starts at the first beat that fits
+/// (VirtCore's `LeadIn.beats`). A pause, ±15 or skip inside the count-in stops it (`SoundKeeper.keeps`), and the new
+/// zero gets its own.
+///
 /// When it stops, the session goes back to `.ambient` (the app's own sounds then follow the silent switch, as before).
 /// A call, Siri or an alarm interrupts it: those zeros are silent (no notification, in any case), and it comes back when
 /// the interruption ends, or at the next timer change after `SoundKeeper.retryAfter` if iOS never says it ended.
@@ -19,8 +25,8 @@ import VirtCore
     var onChange: (() -> Void)?
 
     private var loop: AVAudioPlayer?
-    /// The scheduled zeros, by key, with when each was set to start.
-    private var players: [String: (player: AVAudioPlayer, playAt: Date)] = [:]
+    /// The scheduled zeros, by key, with when each was set to start (its first beat) and its zero.
+    private var players: [String: (player: AVAudioPlayer, playAt: Date, zeroAt: Date)] = [:]
     /// Zeros whose sound has started (so the app's own chime never plays one again).
     private var started: Set<String> = []
     private var failedAt: Date?
@@ -30,15 +36,20 @@ import VirtCore
     /// For the test build's status line: the states it has been in this launch.
     private(set) var history: [String] = []
 
-    /// The next zero's sound, for the test build's status line.
+    /// The next zero's sound (its count-in's first beat), for the test build's status line.
     var nextCueAt: Date? { players.values.map(\.playAt).filter { $0 > Date() }.min() }
 
     /// True when this zero's sound is the keeper's (scheduled or already started): the app doesn't play it too.
     func covers(_ key: String) -> Bool { started.contains(key) || (state.covers && players[key] != nil) }
 
+    /// The app's own count-in for this zero has started (Virt was open): the keeper never plays it too.
+    func appStarted(_ key: String) { started.insert(key) }
+
     /// Runs the keeper (or not) and schedules exactly these zeros.
     func update(run: Bool, cues: [SoundKeeper.Cue], now: Date) {
         observe()
+        // a count-in already sounding whose zero went (paused, moved, skipped, Sounds off) stops, even with Virt open
+        prune(cues, now: now)
         guard run else { return stop() }
         let waited = failedAt.map { now.timeIntervalSince($0) >= SoundKeeper.retryAfter } ?? true
         if state == .off || ((state == .failed || state == .interrupted) && waited) {
@@ -108,25 +119,33 @@ import VirtCore
     // MARK: - The zeros
 
     private func schedule(_ cues: [SoundKeeper.Cue], now: Date) {
-        let wanted = Dictionary(cues.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
-        // drop what's no longer ahead (paused, moved, skipped); one already sounding plays out
-        for (key, p) in players where wanted[key] == nil || abs(wanted[key]!.playAt.timeIntervalSince(p.playAt)) > 0.05 {
-            // one already sounding plays out (and stays held until it ends, or it would be cut off)
-            if p.playAt <= now && p.player.isPlaying { continue }
-            p.player.stop()
-            players[key] = nil
-        }
+        prune(cues, now: now)
         for c in cues where players[c.key] == nil && !started.contains(c.key) {
-            guard let p = Self.player(file: c.file) else { continue }
+            guard let made = CountInSound.player(for: c) else { continue }
+            let (p, at) = made
             p.volume = SoundBoard.volume(c.cue)
-            let delay = c.playAt.timeIntervalSince(now)
-            // inside its lead-in already (a change just then): at once, late but never missed
+            let delay = at.timeIntervalSince(now)
+            // inside its count-in already, the beats that fit were chosen for now: at once (only ever a few ms)
             let ok = delay > 0.02 ? p.play(atTime: p.deviceCurrentTime + delay) : p.play()
             guard ok else { continue }
-            players[c.key] = (p, c.playAt)
+            players[c.key] = (p, c.playAt, c.zeroAt)
             if delay <= 0.02 { started.insert(c.key) }
         }
         markStarted(now: now)
+    }
+
+    /// Stops every zero's sound that's no longer ahead (VirtCore's `SoundKeeper.keeps`): one waiting or counting in
+    /// for a zero that was paused, moved or skipped stops; a zero sound already ringing plays out.
+    private func prune(_ cues: [SoundKeeper.Cue], now: Date) {
+        let wanted = Set(cues.map(\.key))
+        for (key, p) in players {
+            let sounding = p.playAt <= now && p.player.isPlaying
+            if SoundKeeper.keeps(playAt: p.playAt, zeroAt: p.zeroAt, sounding: sounding, wanted: wanted.contains(key), now: now) {
+                continue
+            }
+            p.player.stop()
+            players[key] = nil
+        }
     }
 
     /// Zeros whose moment has come are remembered as played (the app then never plays them too).
@@ -211,15 +230,6 @@ import VirtCore
     // MARK: - Files
 
     private enum KeeperError: Error { case loopWouldNotPlay }
-
-    private static func player(file: String) -> AVAudioPlayer? {
-        let name = (file as NSString).deletingPathExtension, ext = (file as NSString).pathExtension
-        guard let url = Bundle.main.url(forResource: name, withExtension: ext), let p = try? AVAudioPlayer(contentsOf: url) else {
-            return nil
-        }
-        p.prepareToPlay()
-        return p
-    }
 
     /// One second of silence (16-bit mono PCM, 8 kHz), made here so no file ships for it.
     static let silence: Data = {

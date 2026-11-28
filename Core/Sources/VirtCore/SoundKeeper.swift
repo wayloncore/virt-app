@@ -39,16 +39,30 @@ public enum SoundKeeper {
         return live && board.midWorkout(now: now)
     }
 
-    /// One zero's sound for the keeper to play.
+    /// One zero's sound for the keeper to play: its count-in and the zero sound, as one sound (`LeadIn.compose`).
     public struct Cue: Equatable, Sendable {
         /// The zero this is (its step and its moment), the same key the in-app chime uses, so it never plays twice.
         public var key: String
         public var cue: SoundCue
-        /// The bundled file.
+        /// The bundled zero sound (for Chime and Digital's rest-ends, the green light, which is its own count-in).
         public var file: String
-        /// When the sound starts: the zero, less the sound's own lead-in (the green light starts 1.2 s early).
+        /// The tick played three times before it, or nil when `file` is its own count-in.
+        public var tick: String?
+        /// How many beats of the count-in fit (`LeadIn.beats`): 3, or fewer when there isn't room.
+        public var beats: Int
+        /// When the sound starts: its first beat that fits (3 s before the zero when all three do), or the zero.
         public var playAt: Date
         public var zeroAt: Date
+
+        public init(key: String, cue: SoundCue, file: String, tick: String?, beats: Int, playAt: Date, zeroAt: Date) {
+            self.key = key
+            self.cue = cue
+            self.file = file
+            self.tick = tick
+            self.beats = beats
+            self.playAt = playAt
+            self.zeroAt = zeroAt
+        }
     }
 
     /// The key for one zero (the step's identifier and its moment).
@@ -56,12 +70,28 @@ public enum SoundKeeper {
         "\(identifier)@\(fireAt.timeIntervalSince1970)"
     }
 
-    /// Every zero still ahead (the running step and each `upcoming` one), with when its sound starts. A zero whose
-    /// sound should already have started (inside its lead-in) is kept, to play at once: late, never missed.
+    /// Every zero still ahead (the running step and each `upcoming` one), each with its count-in and when it starts.
+    /// The count-in keeps its rhythm and always ends on the zero: with less room (inside the last 3 s already, a short
+    /// step, a zero close after another) it starts on the next whole beat that fits (`LeadIn.beats`), or it's just the
+    /// zero sound, on time.
     public static func cues(board: TimerBoard, style: SoundStyle, now: Date) -> [Cue] {
         board.alerts(now: now).map { a in
-            Cue(key: key(identifier: a.identifier, fireAt: a.fireAt), cue: a.cue, file: style.file(a.cue),
-                playAt: a.fireAt.addingTimeInterval(-style.lead(a.cue)), zeroAt: a.fireAt)
+            let n = LeadIn.beats(zero: a.fireAt, now: now, length: a.length)
+            return Cue(key: key(identifier: a.identifier, fireAt: a.fireAt), cue: a.cue, file: style.file(a.cue),
+                       tick: style.countInTick(a.cue), beats: n, playAt: a.fireAt.addingTimeInterval(-TimeInterval(n)),
+                       zeroAt: a.fireAt)
         }.sorted { $0.playAt < $1.playAt }
+    }
+
+    /// What to do with a zero's sound already scheduled or playing when the zeros ahead change (a pause, resume, ±15,
+    /// skip, Log set, Sounds off, or just a page message): keep it, or stop it. `wanted`: the same zero (step and
+    /// moment) is still ahead. `sounding`: it has started and is playing.
+    /// - The same zero still ahead: keep it, whether it's waiting to start or already counting in (its count-in is
+    ///   never restarted or cut short by a refresh; `beats` only shrinks as time passes).
+    /// - That zero gone (paused, moved by ±15, skipped, Sounds off): stop it, so a count-in never runs on into a zero
+    ///   that isn't there; unless its zero has already come, so the zero sound is ringing: that plays out.
+    public static func keeps(playAt: Date, zeroAt: Date, sounding: Bool, wanted: Bool, now: Date) -> Bool {
+        if wanted { return sounding || playAt > now }
+        return sounding && now >= zeroAt
     }
 }

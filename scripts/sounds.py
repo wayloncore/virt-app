@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Virt's sounds (App/Sounds). Each is short, quiet and mono, saved as 16-bit .caf (the format iOS takes for a
+"""Virt's sounds (App/Sounds). Each is short and mono, saved as 16-bit .caf (the format iOS takes for a
 notification sound, 30 seconds at most).
 
   sounds.py synth OUTDIR             makes the Chime style: clean synthesized bells (no downloads needed)
-  sounds.py start OUTDIR             makes only the green light (virt-start-go.caf), the sound when a rest ends
+  sounds.py start OUTDIR             makes only the green light (virt-start-go-3s.caf), the sound when a rest ends
   sounds.py tones OUTDIR             makes the zero tones: one for each of the tone styles (Digital up to Quest jingle),
                                      loud and clear
   sounds.py survey PACKDIR SHOTDIR   lists every sound in the Kenney packs with its length, level, pitch and decay,
                                      and draws spectrograms of the likely bells, chimes, ticks and clicks
   sounds.py pick PACKDIR PICKS OUTDIR  trims and levels the files PICKS (a JSON file) names, into the Digital style
+  sounds.py louder FILE...           pure gain: one gain for one style's files (FILE... are all of that style), the
+                                     one that brings its loudest zero-type file to LOUD_PEAK; nothing else changes
+                                     (for files that can't be remade here, like the Digital picks)
+  sounds.py countin STYLEDIR OUTDIR  renders the 3-second count-in exactly as Virt builds it (VirtCore's LeadIn), from
+                                     -3 s through the zero, as .wav previews
 
 The Kenney packs are CC0 (App/Sounds/LICENSES.md). The workflow .github/workflows/sounds.yml downloads them on a
 GitHub runner (this repo never keeps the packs, only the few files picked from them).
@@ -21,8 +26,13 @@ import numpy as np
 
 RATE = 44100
 CUES = ["tick", "go", "rest", "set", "finish"]
-# peak levels, in dBFS: the zero sounds clear but not loud, the ticks and the click well under them
+# Peak levels, in dBFS: the zero sounds clear, the ticks and the click well under them (the balance Tyler approved).
 PEAK = {"tick": -20.0, "go": -7.0, "rest": -7.0, "set": -22.0, "finish": -9.0}
+# Then louder (Tyler, Nov 27, build 95: "The sound could be louder"): each style gets ONE gain, the one that brings its
+# loudest zero-type file (go, rest, finish) to LOUD_PEAK, the tone styles' level; every file of the style gets that
+# same gain, so the balance inside the style is exactly as it was (`style_gain`). Pure gain: no limiting.
+LOUD_PEAK = -1.5
+ZERO_TYPES = ("go", "rest", "finish")
 
 
 # ---------- files ----------
@@ -48,6 +58,19 @@ def read_any(path):
         n = int(round(len(x) * RATE / rate))
         x = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x)
     return x
+
+
+def normalize(x, peak_db=LOUD_PEAK):
+    """Pure gain: the whole sound scaled so its peak is exactly `peak_db`. Nothing else changes (no limiting)."""
+    x = np.asarray(x, dtype=np.float64)
+    p = np.max(np.abs(x)) or 1.0
+    return x * (10 ** (peak_db / 20) / p)
+
+
+def style_gain(files):
+    """The one gain (as a factor) for a style: its loudest zero-type file (cue -> samples) to LOUD_PEAK."""
+    loudest = max(np.max(np.abs(files[c])) for c in ZERO_TYPES if c in files)
+    return 10 ** (LOUD_PEAK / 20) / loudest
 
 
 def level(x, peak_db):
@@ -119,9 +142,16 @@ def synth_cue(cue):
 # The green light (Tyler, Nov 24: "a training green-light sound"), like the start of a race: three short even tones,
 # then one longer, higher "go" tone an octave up. Pure tones with a soft second partial and gentle edges, so it's
 # clean, not harsh. The go tone starts at START_LEAD seconds (VirtCore's SoundStyle.startLead), so the app starts the
-# sound that much before the zero and the go lands on it. Under 2 seconds in all.
-START_LEAD = 1.2
-START_PEAK = -6.0
+# sound that much before the zero and the go lands on it.
+# Nov 27 (build 95: "I need it to start around 3 seconds not 1 second"): the same three tones and go tone, one second
+# apart (at -3, -2, -1 and the go on the zero), at LOUD_PEAK: virt-start-go-3s.caf. The first green light
+# (virt-start-go.caf: 0.4 s apart, go at 1.2 s, -6 dBFS) stays in the app untouched, for a rollback; it was
+# green_light(spacing=0.4, lead=1.2) leveled to -6. The green light is shared by Chime and Digital, so it's its own
+# family: leveled straight to LOUD_PEAK (its tones keep their own balance).
+START_LEAD = 3.0
+START_SPACING = 1.0
+START_PEAK = LOUD_PEAK
+START_FILE = "virt-start-go-3s.caf"
 
 
 def tone(freq, seconds, rise=0.008, fall=0.06, second=0.18):
@@ -135,28 +165,31 @@ def tone(freq, seconds, rise=0.008, fall=0.06, second=0.18):
     return x * env
 
 
-def green_light():
+def green_light(spacing=START_SPACING, lead=START_LEAD):
     beep, go = 880.0, 1760.0  # A5 for the three, A6 for go
-    parts = [(i * 0.4, tone(beep, 0.13), 0.8) for i in range(3)]
+    parts = [(i * spacing, tone(beep, 0.13), 0.8) for i in range(3)]
     # the go tone: longer, with a slow fade so it rings out
     t = t_axis(0.6)
     ring = tone(go, 0.6, fall=0.25, second=0.12) * np.exp(-t / 0.9)
-    parts.append((START_LEAD, ring, 1.0))
-    return place(parts, START_LEAD + 0.62)
+    parts.append((lead, ring, 1.0))
+    return place(parts, lead + 0.62)
 
 
 def start(outdir):
     os.makedirs(outdir, exist_ok=True)
-    x = level(green_light(), START_PEAK)
-    path = os.path.join(outdir, "virt-start-go.caf")
+    x = normalize(level(green_light(), START_PEAK), START_PEAK)
+    path = os.path.join(outdir, START_FILE)
     write_caf(path, x)
     print(f"{os.path.basename(path)}: {len(x) / RATE:.2f} s, {os.path.getsize(path) // 1024} KB")
 
 
 def synth(outdir):
     os.makedirs(outdir, exist_ok=True)
+    made = {cue: level(synth_cue(cue), PEAK[cue]) for cue in CUES}
+    g = style_gain(made)
+    print(f"Chime: +{20 * np.log10(g):.2f} dB on every file")
     for cue in CUES:
-        x = level(synth_cue(cue), PEAK[cue])
+        x = made[cue] * g
         path = os.path.join(outdir, f"virt-chime-{cue}.caf")
         write_caf(path, x)
         print(f"{os.path.basename(path)}: {len(x) / RATE:.2f} s, {os.path.getsize(path) // 1024} KB")
@@ -351,6 +384,93 @@ def tones(outdir):
         print(f"{name}: {len(x) / RATE:.2f} s, {os.path.getsize(path) // 1024} KB")
 
 
+# ---------- louder: pure gain (Nov 27) ----------
+
+def read_caf(path):
+    """A 16-bit linear PCM mono .caf (as write_caf makes them) as float samples."""
+    b = open(path, "rb").read()
+    if b[:4] != b"caff":
+        raise ValueError(f"{path}: not a .caf")
+    i, desc, data = 8, None, None
+    while i < len(b):
+        kind, size = b[i:i + 4], struct.unpack(">q", b[i + 4:i + 12])[0]
+        body = b[i + 12:i + 12 + size]
+        if kind == b"desc":
+            desc = struct.unpack(">dIIIIII", body)
+        elif kind == b"data":
+            data = body[4:]
+        i += 12 + size
+    rate, fmt, flags, _, _, channels, bits = desc
+    if fmt != int.from_bytes(b"lpcm", "big") or bits != 16 or channels != 1 or int(rate) != RATE:
+        raise ValueError(f"{path}: expected 16-bit mono lpcm at {RATE} Hz, got {desc}")
+    return np.frombuffer(data, "<i2" if flags & 2 else ">i2").astype(np.float64) / 32768
+
+
+def louder(paths):
+    """One style's files (virt-<style>-<cue>.caf), all by the one gain `style_gain` finds: same samples, same length,
+    the same balance between them; only the level changes."""
+    files = {os.path.basename(p).rsplit("-", 1)[-1].removesuffix(".caf"): read_caf(p) for p in paths}
+    g = style_gain(files)
+    print(f"+{20 * np.log10(g):.2f} dB on every file")
+    for path in paths:
+        x = read_caf(path)
+        before = 20 * np.log10(np.max(np.abs(x)))
+        write_caf(path, x * g)
+        print(f"{os.path.basename(path)}: {before:.2f} -> {before + 20 * np.log10(g):.2f} dBFS peak")
+
+
+# ---------- the count-in previews (Nov 27) ----------
+# The same build as VirtCore's LeadIn.compose: a style's tick at 0, 1 and 2 s at TICK_VOLUME (LeadIn.tickVolume, so
+# the file sounds as the app plays it), then the zero sound at 3 s, played at full volume. The green light (Chime and
+# Digital, when a rest ends) is its own 3-second file, with no ticks.
+TICK_VOLUME = 1.76
+SET_VOLUME = 0.6  # SoundBoard.volume(.set)
+
+
+def count_in(tick, zero, tick_volume=TICK_VOLUME):
+    out = np.zeros(int(3 * RATE) + len(zero))
+    for k in range(3):
+        i = k * RATE
+        out[i:i + len(tick)] += tick_volume * tick
+    out[3 * RATE:3 * RATE + len(zero)] += zero
+    return np.clip(out, -1, 1)
+
+
+def write_wav(path, x):
+    import wave
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes(np.clip(np.round(x * 32767), -32768, 32767).astype("<i2").tobytes())
+
+
+# preview name -> (tick file, zero file); None for the tick means the file is already a 3-second count-in
+PREVIEWS = {
+    "chime-and-digital-rest-ends-green-light": (None, START_FILE),
+    "chime-work-ends": ("virt-chime-tick.caf", "virt-chime-rest.caf"),
+    "digital-work-ends": ("virt-digital-tick.caf", "virt-digital-rest.caf"),
+    "digital-up": ("virt-chime-tick.caf", "virt-digital-up-zero.caf"),
+    "glass": ("virt-chime-tick.caf", "virt-glass-zero.caf"),
+    "buzzer-horn": ("virt-chime-tick.caf", "virt-buzzer-horn-zero.caf"),
+}
+
+
+def countin(styledir, outdir):
+    os.makedirs(outdir, exist_ok=True)
+    out = {}
+    for name, (tick, zero) in PREVIEWS.items():
+        z = read_caf(os.path.join(styledir, zero))
+        out[name] = z if tick is None else count_in(read_caf(os.path.join(styledir, tick)), z)
+    # the click-to-zero balance: a set logged (as the app plays it), 2 s of quiet, then Chime's work-ends count-in
+    click = SET_VOLUME * read_caf(os.path.join(styledir, "virt-chime-set.caf"))
+    out["chime-set-click-then-rest"] = np.concatenate([click, np.zeros(2 * RATE), out["chime-work-ends"]])
+    for name, x in out.items():
+        path = os.path.join(outdir, f"{name}.wav")
+        write_wav(path, x)
+        print(f"{name}.wav: {len(x) / RATE:.2f} s, peak {20 * np.log10(np.max(np.abs(x))):.2f} dBFS")
+
+
 # ---------- the Kenney packs ----------
 
 def stats(x):
@@ -434,6 +554,7 @@ def pick(packdir, picks_path, outdir):
     for style, cues in picks.items():
         if style.startswith("_"):
             continue
+        made = {}
         for cue, p in cues.items():
             x = read_any(os.path.join(packdir, p["file"]))
             # start at the sound itself (skip leading silence), then the length asked for
@@ -449,10 +570,13 @@ def pick(packdir, picks_path, outdir):
                 z[:len(x)] += x
                 z[at:at + len(y)] += y * 10 ** (p["then"].get("gain", 0) / 20)
                 x = z
-            x = level(x, PEAK[cue] + p.get("gain", 0))
+            made[cue] = level(x, PEAK[cue] + p.get("gain", 0))
+        g = style_gain(made)  # Nov 27: the style's one gain, so its loudest zero-type file is at LOUD_PEAK
+        for cue, x in made.items():
+            x = x * g
             path = os.path.join(outdir, f"virt-{style}-{cue}.caf")
             write_caf(path, x)
-            print(f"{os.path.basename(path)} <- {p['file']}: {len(x) / RATE:.2f} s, {os.path.getsize(path) // 1024} KB")
+            print(f"{os.path.basename(path)} <- {cues[cue]['file']}: {len(x) / RATE:.2f} s, {os.path.getsize(path) // 1024} KB")
 
 
 if __name__ == "__main__":
@@ -463,6 +587,10 @@ if __name__ == "__main__":
         start(sys.argv[2])
     elif cmd == "tones":
         tones(sys.argv[2])
+    elif cmd == "louder":
+        louder(sys.argv[2:])
+    elif cmd == "countin":
+        countin(sys.argv[2], sys.argv[3])
     elif cmd == "survey":
         survey(sys.argv[2], sys.argv[3])
     elif cmd == "pick":

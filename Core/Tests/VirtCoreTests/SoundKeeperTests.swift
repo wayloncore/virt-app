@@ -51,13 +51,21 @@ final class SoundKeeperTests: XCTestCase {
         XCTAssertEqual(chime[0].cue, .go)
         XCTAssertEqual(chime[0].file, SoundStyle.startFile)
         XCTAssertEqual(chime[0].zeroAt, s(90))
-        XCTAssertEqual(chime[0].playAt, s(90 - SoundStyle.startLead), "the green light starts 1.2 s early")
+        XCTAssertEqual(chime[0].playAt, s(87), "the green light's count-in starts 3 s early (Nov 27)")
+        XCTAssertNil(chime[0].tick, "the green light is its own count-in")
+        XCTAssertEqual(chime[0].beats, 3)
         XCTAssertEqual(chime[0].key, "virt.timer.rest:0@\(s(90).timeIntervalSince1970)")
         let classic = SoundKeeper.cues(board: b, style: .classic, now: s(5))
-        XCTAssertEqual(classic[0].playAt, s(90), "Classic's chime is on the zero")
+        XCTAssertEqual(classic[0].playAt, s(87), "Classic counts in with Chime's tick, its chime on the zero")
         XCTAssertEqual(classic[0].file, "virt-chime.wav")
-        // inside the lead-in: kept, to play at once
-        XCTAssertEqual(SoundKeeper.cues(board: b, style: .chime, now: s(89.5)).count, 1)
+        XCTAssertEqual(classic[0].tick, "virt-chime-tick.caf")
+        // inside the count-in: from the next beat that fits; with under a second, just the zero sound, on time
+        let late = SoundKeeper.cues(board: b, style: .chime, now: s(88.5))
+        XCTAssertEqual(late.map(\.beats), [1])
+        XCTAssertEqual(late.map(\.playAt), [s(89)])
+        let last = SoundKeeper.cues(board: b, style: .chime, now: s(89.5))
+        XCTAssertEqual(last.map(\.beats), [0])
+        XCTAssertEqual(last.map(\.playAt), [s(90)])
         XCTAssertTrue(SoundKeeper.cues(board: b, style: .chime, now: s(91)).isEmpty)
     }
 
@@ -71,10 +79,11 @@ final class SoundKeeperTests: XCTestCase {
         let cues = SoundKeeper.cues(board: b, style: .questJingle, now: s(1))
         XCTAssertEqual(cues.map(\.cue), [.rest, .go])
         XCTAssertEqual(cues.map(\.file), ["virt-quest-jingle-zero.caf", "virt-quest-jingle-zero.caf"])
-        XCTAssertEqual(cues.map(\.playAt), [s(30), s(45)], "on the zero: the 3-2-1 ticks are its lead-in")
+        XCTAssertEqual(cues.map(\.playAt), [s(27), s(42)], "the 3-2-1 ticks before each zero, locked too (Nov 27)")
+        XCTAssertEqual(cues.map(\.tick), ["virt-chime-tick.caf", "virt-chime-tick.caf"])
         // Digital is as it was; Digital up is its own tone style
         XCTAssertEqual(SoundKeeper.cues(board: b, style: .digital, now: s(1)).first?.file, "virt-digital-rest.caf")
-        XCTAssertEqual(SoundKeeper.cues(board: b, style: .digitalUp, now: s(1)).map(\.playAt), [s(30), s(45)])
+        XCTAssertEqual(SoundKeeper.cues(board: b, style: .digitalUp, now: s(1)).map(\.playAt), [s(27), s(42)])
     }
 
     func testEveryUpcomingZeroIsAhead() {
@@ -88,6 +97,7 @@ final class SoundKeeperTests: XCTestCase {
         XCTAssertEqual(cues.map(\.zeroAt), [s(30), s(45), s(75)])
         XCTAssertEqual(cues.map(\.cue), [.rest, .go, .rest])
         XCTAssertEqual(cues[1].playAt, s(45 - SoundStyle.startLead))
+        XCTAssertEqual(cues.map(\.playAt), [s(27), s(42), s(72)])
         // pause: nothing ahead; skip forward to the next step: its zeros only
         var p = b
         p.apply(.pause, now: s(10))
@@ -119,5 +129,8 @@ final class SoundKeeperTests: XCTestCase {
         let reminders = try String(contentsOf: root.appendingPathComponent("App/Reminders.swift"), encoding: .utf8)
         XCTAssertTrue(reminders.contains("requestAuthorization"), "only turning on the reminders asks")
         XCTAssertTrue(engine.contains("BackgroundSound.shared.covers(key)"), "the app's own chime never doubles the keeper's")
+        XCTAssertTrue(engine.contains("BackgroundSound.shared.appStarted(key)"), "nor the keeper the app's")
+        XCTAssertTrue(keeper.contains("CountInSound.player(for: c)"), "the keeper plays the count-in and the zero as one sound")
+        XCTAssertTrue(keeper.contains("play(atTime:"), "scheduled ahead on the audio clock")
     }
 }

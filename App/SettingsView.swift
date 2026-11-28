@@ -118,7 +118,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Sounds")
                 } footer: {
-                    Text("A sound at each zero, the 3-2-1 before it, a click when a set is logged, and a short finish. They mix with your music and follow the silent switch. With the phone locked during a workout, the zero sound still plays. With Sounds off, Virt makes no sound at all, on the Lock Screen too.")
+                    Text("A sound at each zero, a 3-2-1 before it, a click when a set is logged, and a short finish. They mix with your music and follow the silent switch. With the phone locked during a workout, the 3-2-1 and the zero sound still play. With Sounds off, Virt makes no sound at all, on the Lock Screen too.")
                 }
 
                 // The styles, grouped (VirtCore's SoundStyle.Group): tap one to choose it and hear it (its work-ends

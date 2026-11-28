@@ -37,12 +37,17 @@ final class SoundStyleTests: XCTestCase {
         XCTAssertEqual(SoundStyle.digital.file(.set), "virt-digital-set.caf")
         XCTAssertEqual(SoundStyle.digital.file(.finish), "virt-digital-finish.caf")
         XCTAssertEqual(SoundStyle.digital.lead(.go), SoundStyle.startLead)
-        // a tone style: its tone at both zeros, no lead (so the 3-2-1 ticks play), Chime's other cues
+        XCTAssertEqual(SoundStyle.startLead, 3)
+        XCTAssertEqual(SoundStyle.digital.countInTick(.rest), "virt-digital-tick.caf", "Digital counts in with its own tick")
+        // a tone style: its tone at both zeros after Chime's tick three times (Nov 27), Chime's other cues
         for s in SoundStyle.allCases where s.isTone {
             XCTAssertEqual(s.file(.go), "virt-\(s.rawValue)-zero.caf")
             XCTAssertEqual(s.file(.rest), s.file(.go))
             for c in [SoundCue.leadIn, .set, .finish] { XCTAssertEqual(s.file(c), SoundStyle.chime.file(c)) }
-            for c in SoundCue.allCases { XCTAssertEqual(s.lead(c), 0, "\(s.rawValue) \(c.rawValue)") }
+            for c in SoundCue.allCases { XCTAssertEqual(s.lead(c), c.isZero ? 3 : 0, "\(s.rawValue) \(c.rawValue)") }
+            XCTAssertEqual(s.countInTick(.go), "virt-chime-tick.caf")
+            XCTAssertEqual(s.countInTick(.rest), "virt-chime-tick.caf")
+            XCTAssertNil(s.countInTick(.set))
         }
         XCTAssertEqual(SoundStyle.allCases.filter(\.isTone).count, 14)
         XCTAssertEqual(SoundStyle.digitalUp.file(.rest), "virt-digital-up-zero.caf", "Digital up: its own style")

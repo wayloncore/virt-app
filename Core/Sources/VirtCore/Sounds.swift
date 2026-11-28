@@ -14,6 +14,9 @@ public enum SoundCue: String, CaseIterable, Sendable {
     /// The workout saved.
     case finish
 
+    /// A zero's sound (`go` or `rest`), the ones with a count-in.
+    public var isZero: Bool { self == .go || self == .rest }
+
     /// Which zero sound a countdown of this kind ends with.
     public static func zero(after kind: TimerKind) -> SoundCue {
         switch kind {
@@ -93,26 +96,39 @@ public enum SoundStyle: String, CaseIterable, Sendable {
 
     public var detail: String {
         switch self {
-        case .chime: return "A green light when a rest ends, a soft falling bell when work ends"
-        case .digital: return "A green light when a rest ends, a falling run of clean tones when work ends"
+        case .chime: return "A green light when a rest ends, a 3-2-1 and a soft falling bell when work ends"
+        case .digital: return "A green light when a rest ends, a 3-2-1 and a falling run of clean tones when work ends"
         case .classic: return "The first Virt chime"
         default: return "The same tone at both zeros, after a 3-2-1"
         }
     }
 
-    /// How long before the zero a cue's sound starts, so its main tone lands on the zero: the green light's three short
-    /// tones play in the last 1.2 seconds (and they are its lead-in: no 3-2-1 ticks with it). 0 for every other sound.
-    public func lead(_ cue: SoundCue) -> TimeInterval { file(cue) == Self.startFile ? Self.startLead : 0 }
+    /// How long before the zero a zero's sound starts (Tyler, Nov 27, build 95: "I need it to start around 3 seconds
+    /// not 1 second"): every zero, in every style, locked or open, has a three-second count-in, a beat at -3, -2 and
+    /// -1 s and the zero sound on the zero. In Chime and Digital the rest-ends zero is the green light, whose three
+    /// short tones are its count-in; every other zero is the style's tick three times, then its zero sound
+    /// (`LeadIn.compose`). 0 for the cues that aren't zeros (the tick itself, the set click, the finish).
+    public func lead(_ cue: SoundCue) -> TimeInterval { cue.isZero ? LeadIn.seconds : 0 }
+
+    /// The tick played before a zero's sound, or nil when the zero's file is its own count-in (the green light).
+    public func countInTick(_ cue: SoundCue) -> String? {
+        guard cue.isZero, file(cue) != Self.startFile else { return nil }
+        return file(.leadIn)
+    }
 
     /// A stored value read back (an unknown one, from a newer Virt, falls back to the standard style).
     public init(stored: String?) { self = SoundStyle(rawValue: stored ?? "") ?? .standard }
 
     /// The race-start "go" (Tyler, Nov 24: "a training green-light sound"): three short even tones, then one longer,
     /// higher go tone. It's the sound when a rest ends in Chime and Digital, in the app and on the Lock Screen.
-    /// The bells it replaced (`virt-chime-go.caf`, `virt-digital-go.caf`) stay in the app for a rollback.
-    public static let startFile = "virt-start-go.caf"
+    /// Nov 27: the same tones one second apart (`scripts/sounds.py start`), so its count-in starts 3 s before the zero.
+    /// The bells it replaced (`virt-chime-go.caf`, `virt-digital-go.caf`) and the first green light (`firstStartFile`)
+    /// stay in the app for a rollback.
+    public static let startFile = "virt-start-go-3s.caf"
+    /// The first green light (Nov 24: 0.4 s apart, the go at 1.2 s), kept untouched for a rollback; no style plays it.
+    public static let firstStartFile = "virt-start-go.caf"
     /// Where the go tone starts in `startFile`: its three short tones come first, so the go tone lands on the zero.
-    public static let startLead: TimeInterval = 1.2
+    public static let startLead: TimeInterval = LeadIn.seconds
 
     /// The bundled file for a cue. Classic has one zero sound and a tone style one tone; their other cues use Chime's.
     public func file(_ cue: SoundCue) -> String {
@@ -139,14 +155,83 @@ public enum SoundStyle: String, CaseIterable, Sendable {
     }
 }
 
-/// The 3-2-1 lead-in: a soft tick at 3, 2 and 1 seconds before zero, for countdowns long enough to want one.
+/// The count-in before each zero (Tyler, Nov 27, build 95): three beats one second apart, at -3, -2 and -1 s, then the
+/// zero sound exactly on the zero. In every style, with Virt open or the phone locked, for every timed zero the app
+/// sounds (a rest's end, a timed work or hold's end, each interval change, and each `upcoming` step's zero).
+///
+/// The timing rule, in plain words: the count-in always keeps its one-second rhythm and always ends exactly on the
+/// zero. When there isn't room for all of it (a countdown shorter than 3 s, a -15 that leaves less, a resume inside
+/// the last 3 s, or a zero less than 3 s after the one before), it starts on the next whole beat that still fits
+/// (-2 or -1), or it's just the zero sound. A beat never lands right on the step's own start (it needs `afterStart`
+/// of room), so two close zeros never overlap their count-ins. Pausing stops a count-in; resuming times it again.
 public enum LeadIn {
-    public static let shortest: TimeInterval = 8
+    /// The count-in's length: its first beat is this long before the zero.
+    public static let seconds: TimeInterval = 3
+    /// A beat needs this much time ahead of now to be scheduled (otherwise it's skipped, never played late).
+    public static let ahead: TimeInterval = 0.02
+    /// And this much after the step began (the previous zero, or the countdown's start), so it never sits on top of it.
+    public static let afterStart: TimeInterval = 0.25
+    /// How loud the beats are baked into the count-in, as a gain on the tick file (Nov 27). With the files in the
+    /// balance Tyler approved (Chime's tick at -17.4 dBFS peak), 1.76 (+4.9 dB) puts the beats at -12.5, 11 dB under a
+    /// tone style's zero (-1.5): clearly there over music, well under the zero. It's a gain in the samples (more than
+    /// a player's volume can give); nothing clips (a tick never overlaps the zero sound).
+    public static let tickVolume: Float = 1.76
 
-    /// `lead`: the zero sound's own lead-in (SoundStyle.lead); with one, no ticks (they'd clash with its tones).
-    public static func ticks(zero: Date, now: Date, length: TimeInterval?, lead: TimeInterval = 0) -> [Date] {
-        if lead > 0 { return [] }
-        if let l = length, l < shortest { return [] }
-        return [3.0, 2.0, 1.0].map { zero.addingTimeInterval(-$0) }.filter { $0.timeIntervalSince(now) > 0.05 }
+    /// How many beats of the count-in still fit before this zero: 3, 2, 1 or 0 (then just the zero sound).
+    /// `length`: how long the step that ends here runs, when known (it can't start before the step does).
+    public static func beats(zero: Date, now: Date, length: TimeInterval?) -> Int {
+        var room = zero.timeIntervalSince(now) - ahead
+        if let l = length { room = min(room, l - afterStart) }
+        guard room > 0 else { return 0 }
+        return min(Int(seconds), Int((room + 1e-9).rounded(.down)))
+    }
+
+    /// When the count-in's sound starts: its first beat that fits, or the zero itself.
+    public static func start(zero: Date, now: Date, length: TimeInterval?) -> Date {
+        zero.addingTimeInterval(-TimeInterval(beats(zero: zero, now: now, length: length)))
+    }
+
+    /// The beats that play, each a whole second before the zero (for the tests and the status line).
+    public static func ticks(zero: Date, now: Date, length: TimeInterval?) -> [Date] {
+        let n = beats(zero: zero, now: now, length: length)
+        return stride(from: n, to: 0, by: -1).map { zero.addingTimeInterval(-TimeInterval($0)) }
+    }
+
+    /// One sound for a zero, from -3 s through the zero (so one player plays it all, beats and zero exactly a
+    /// second apart): the tick at 0, 1 and 2 s at `tickVolume`, then the zero sound at 3 s. With no tick, the zero's
+    /// own file is already its count-in (the green light) and is used as it is. `scripts/sounds.py countin` makes the
+    /// same thing for the previews.
+    public static func compose(tick: [Float]?, zero: [Float], rate: Int, tickVolume: Float = tickVolume) -> [Float] {
+        guard let tick else { return zero }
+        let beat = rate * Int(seconds) / 3, at = beat * 3
+        var out = [Float](repeating: 0, count: at + zero.count)
+        for k in 0..<3 {
+            for (i, v) in tick.prefix(beat).enumerated() { out[k * beat + i] += tickVolume * v }
+        }
+        for (i, v) in zero.enumerated() { out[at + i] += v }
+        return out.map { min(1, max(-1, $0)) }
+    }
+
+    /// The part of a composed count-in that plays when only `beats` of it fit: it starts on that beat.
+    public static func slice(_ samples: [Float], rate: Int, beats: Int) -> [Float] {
+        let skip = max(0, Int(seconds) - min(Int(seconds), max(0, beats))) * rate
+        return skip >= samples.count ? [] : Array(samples[skip...])
+    }
+
+    /// 16-bit mono PCM in a WAV, for AVAudioPlayer(data:).
+    public static func wav(_ samples: [Float], rate: Int) -> Data {
+        var d = Data()
+        func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        let bytes = UInt32(samples.count * 2)
+        d.append(contentsOf: Array("RIFF".utf8)); u32(36 + bytes); d.append(contentsOf: Array("WAVE".utf8))
+        d.append(contentsOf: Array("fmt ".utf8)); u32(16); u16(1); u16(1); u32(UInt32(rate)); u32(UInt32(rate * 2)); u16(2); u16(16)
+        d.append(contentsOf: Array("data".utf8)); u32(bytes)
+        d.reserveCapacity(d.count + samples.count * 2)
+        for v in samples {
+            let x = Int16(clamping: Int((min(1, max(-1, v)) * 32767).rounded()))
+            u16(UInt16(bitPattern: x))
+        }
+        return d
     }
 }
