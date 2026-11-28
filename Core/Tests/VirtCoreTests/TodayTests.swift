@@ -41,7 +41,7 @@ final class TodayTests: XCTestCase {
     func testFromWebKitObject() {
         let obj: [String: Any] = ["type": "today", "title": "Legs A", "done": true, "trainingDays": [1, 3]]
         XCTAssertEqual(BridgeMessage.decode(object: obj), .today(TodayInfo(title: "Legs A", done: true, trainingDays: [1, 3])))
-        XCTAssertEqual(BridgeMessage.decode(object: ["type": "set.logged", "exercise": "Squat"]), .setLogged)
+        XCTAssertEqual(BridgeMessage.decode(object: ["type": "set.logged", "exercise": "Squat"]), .setLogged(exercise: "Squat"))
     }
 
     func testStoredCopyRoundTripsAndOlderCopiesRead() {

@@ -227,6 +227,17 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   The 14 tone styles of #27 (Digital up to Quest jingle) and their files are gone. A phone that saved one reads it back
   as Digital (`digital-up`) or Chime (`SoundStyle(stored:)`, `SoundStyle.removed`); the page is only ever told a kept
   id, and its own check falls back to Chime for an id it doesn't know. The zeros play at full player volume.
+- **A rest's name** (Tyler, Nov 27: "instead of the word rest between workouts I want next exercise starts in: ...
+  but in between reps/sets it's still rest"; VirtCore's `RestWords`, tested): the Live Activity calls a rest "Next
+  exercise" when it leads to a different exercise from the one just logged, and "Rest" between sets of the same
+  exercise and between a pair's or circuit's rounds, the same as the website's workout. The page still sends
+  `label: 'Rest'`; Virt picks the words from what it already says (`set.logged`'s `exercise`, now read; `nextSet`; the
+  rest's `next`) or, for its own rest after a locked Log set, from `then` and `after` (the exercise's last set with
+  nothing named after it counts as a different exercise next). Nothing logged yet, or nothing known: "Rest". A rest the
+  page named some other way keeps its name. In the expanded Dynamic Island's corner beside the camera it shortens to
+  "Next" where "Next exercise" doesn't fit (`TimerName`); the compact views show only the clock. The saved content
+  gains no field (the words ride in `label`, which the build before already shows); the board's copy adds two
+  optional ones (`loggedExercise`, `loggedLastSet`). The test build's status line shows `label <name>`.
 - **No app lock** (Tyler, Nov 28: "Do we even need the Face ID unlock? Do we even need an app lock? ... Remove that
   rewire everything properly"; "the phone might need the Face ID to log in with Apple, but not to log into the app
   ever"). Virt never asks for Face ID or the passcode to open, on any phone: no LocalAuthentication, no

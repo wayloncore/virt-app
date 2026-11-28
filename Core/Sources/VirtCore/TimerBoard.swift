@@ -67,6 +67,11 @@ public struct TimerBoard: Equatable, Sendable {
     /// log, so the Live Activity says so instead of ending mid-workout (a circuit's timed exercise is next). Cleared by
     /// the next timer, the next `set.next`, a press, or the workout's end. Not kept across launches.
     public var restOver: (id: String, next: String)?
+    /// The exercise of the set logged last (the page's `set.logged`, or Log set's own), and whether that set was its
+    /// exercise's last (only Log set knows). A rest is "Next exercise" when it leads to a different one (`RestWords`).
+    /// Cleared when the workout ends.
+    public var loggedExercise: String?
+    public var loggedLastSet = false
 
     public init() {}
 
@@ -75,6 +80,7 @@ public struct TimerBoard: Equatable, Sendable {
             && a.lastEnd?.id == b.lastEnd?.id && a.lastEnd?.at == b.lastEnd?.at && a.lastSummary == b.lastSummary
             && a.nextSet == b.nextSet && a.justLogged == b.justLogged
             && a.restOver?.id == b.restOver?.id && a.restOver?.next == b.restOver?.next
+            && a.loggedExercise == b.loggedExercise && a.loggedLastSet == b.loggedLastSet
     }
 
     // MARK: - The page's messages (the page is the source of truth)
@@ -94,6 +100,8 @@ public struct TimerBoard: Equatable, Sendable {
             nextSet = nil
             justLogged = nil
             restOver = nil
+            loggedExercise = nil
+            loggedLastSet = false
         case .timerStart(let s):
             if workout == nil { workout = Workout(title: "Workout", startedAt: now) }
             restOver = nil
@@ -137,7 +145,12 @@ public struct TimerBoard: Equatable, Sendable {
             lastEnd = (id, now)
             countdown = nil
             restOver = nil
-        case .today, .setLogged, .unknown:
+        case .setLogged(let exercise):
+            if let e = exercise {
+                loggedExercise = e
+                loggedLastSet = false
+            }
+        case .today, .unknown:
             break
         }
     }
@@ -266,6 +279,8 @@ public struct TimerBoard: Equatable, Sendable {
         nextSet = n.following
         justLogged = n
         restOver = nil
+        loggedExercise = n.exercise
+        loggedLastSet = n.set >= n.of
         if let r = n.rest {
             let id = Self.nativePrefix + String(Int((now.timeIntervalSince1970 * 1000).rounded()))
             apply(.timerStart(TimerStart(id: id, kind: .rest, label: "Rest", endsAt: now.addingTimeInterval(TimeInterval(r)),
@@ -327,7 +342,7 @@ public struct TimerBoard: Equatable, Sendable {
             d.setDetail = "Logged · " + j.detail
             return d
         }
-        var d = TimerDisplay(id: c.id, kind: c.kind, label: c.label, next: c.next, paused: c.paused)
+        var d = TimerDisplay(id: c.id, kind: c.kind, label: label(of: c), next: c.next, paused: c.paused)
         if let n = nextSet {
             d.nextSet = n.label
             d.logButton = "Log set \(n.set)"
@@ -352,6 +367,14 @@ public struct TimerBoard: Equatable, Sendable {
         }
         // past its zero with the page asleep: the step that's running now, from the plan ahead
         return d.current(at: now)
+    }
+
+    /// A countdown's name for the Live Activity: a rest says "Next exercise" when it leads to a different exercise from
+    /// the one just logged, "Rest" otherwise (`RestWords`, as the website's workout says it). Every other countdown,
+    /// and a rest the page named some other way, keeps the page's own label.
+    func label(of c: Countdown) -> String {
+        guard c.kind == .rest, c.label == RestWords.rest else { return c.label }
+        return RestWords.label(logged: loggedExercise, loggedLast: loggedLastSet, nextSet: nextSet, next: c.next)
     }
 
     /// Whether the screen stays awake (Nov 25: only in the workout, for the battery). The page keeps a workout live
@@ -493,6 +516,9 @@ extension TimerBoard {
         public var lastEndAt: Date?
         public var nextSet: NextSet?
         public var justLogged: NextSet?
+        /// Added Nov 28 (optional): what was logged last, so a rest's words survive iOS ending the app.
+        public var loggedExercise: String?
+        public var loggedLastSet: Bool?
 
         public func encoded() -> Data? { try? JSONEncoder().encode(self) }
         public static func decode(_ data: Data?) -> Snapshot? { data.flatMap { try? JSONDecoder().decode(Snapshot.self, from: $0) } }
@@ -516,6 +542,8 @@ extension TimerBoard {
         s.lastEndAt = lastEnd?.at
         s.nextSet = nextSet
         s.justLogged = justLogged
+        s.loggedExercise = loggedExercise
+        s.loggedLastSet = loggedLastSet ? true : nil
         return s
     }
 
@@ -538,6 +566,8 @@ extension TimerBoard {
         if let id = s.lastEndID, let at = s.lastEndAt { b.lastEnd = (id, at) }
         b.nextSet = s.nextSet
         b.justLogged = s.justLogged
+        b.loggedExercise = s.loggedExercise
+        b.loggedLastSet = s.loggedLastSet ?? false
         return b.midWorkout(now: now) ? b : TimerBoard()
     }
 }
