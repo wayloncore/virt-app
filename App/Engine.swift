@@ -541,6 +541,8 @@ import WidgetKit
         parts.append("activity \(activityNote)")
         parts.append(board.workout.map { "workout \($0.title)" } ?? "no workout")
         parts.append("next \(board.nextSet?.label ?? "none")")
+        // the Live Activity's name for the timer ("Rest", "Next exercise": VirtCore's RestWords)
+        parts.append("label \(board.display(now: now)?.label ?? "none")")
         parts.append("today \(today?.title ?? "none")\(today?.done == true ? " done" : "")")
         parts.append("store \(SharedStore.note)")
         parts.append("reminders \(Reminders.shared.count) (ask \(askNote))")

@@ -72,7 +72,7 @@ final class LogSetTests: XCTestCase {
         XCTAssertEqual(b.countdown?.next, "set 3 of Chest press machine")
 
         // the page wakes: its rest (from the same moment) and its next set replace Virt's
-        b.apply(.setLogged, now: s(30))
+        b.apply(.setLogged(exercise: nil), now: s(30))
         b.apply(.timerStart(TimerStart(id: "rest:10", kind: .rest, label: "Rest", endsAt: s(100), startedAt: s(10),
                                        next: "set 3 of Chest press machine", nextSet: press.following)), now: s(30))
         XCTAssertEqual(b.countdown?.id, "rest:10")

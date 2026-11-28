@@ -221,7 +221,7 @@ final class TimerBoardTests: XCTestCase {
                        "left on the workout screen with nothing happening: it sleeps")
         XCTAssertTrue(b.keepAwake(now: s(200 + TimerBoard.quietLimit + 1), screen: .workout, screenSaidAt: s(TimerBoard.quietLimit)),
                       "the page just said it's on the workout screen")
-        b.apply(.setLogged, now: s(3000))  // a page message is a sign too
+        b.apply(.setLogged(exercise: nil), now: s(3000))  // a page message is a sign too
         XCTAssertTrue(b.keepAwake(now: s(3001), screen: .workout, screenSaidAt: s(10)))
     }
 
@@ -287,7 +287,7 @@ final class TimerBoardTests: XCTestCase {
         b.apply(.today(TodayInfo(title: "Legs A")), now: s(TimerBoard.quietLimit))
         XCTAssertEqual(b.lastMessageAt, s(0))
         XCTAssertFalse(b.keepAwake(now: s(TimerBoard.quietLimit + 1), screen: .workout, screenSaidAt: s(0)))
-        b.apply(.setLogged, now: s(TimerBoard.quietLimit + 2))
+        b.apply(.setLogged(exercise: nil), now: s(TimerBoard.quietLimit + 2))
         XCTAssertTrue(b.keepAwake(now: s(TimerBoard.quietLimit + 3), screen: .workout, screenSaidAt: s(0)), "a logged set is")
         XCTAssertNotNil(b.workout)
     }

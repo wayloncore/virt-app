@@ -164,8 +164,10 @@ public enum BridgeMessage: Equatable, Sendable {
     /// Today's plan, for the widgets, Siri and the reminders (wayloncore/tyleralocke#533). Posted on load and
     /// whenever it changes.
     case today(TodayInfo)
-    /// A set was just logged (an optional addition): a light tap and a tiny click.
-    case setLogged
+    /// A set was just logged (an optional addition): a light tap and a tiny click. `exercise` is the page's name for it
+    /// (optional; a warm-up set's too), so the rest it starts can say whether a different exercise comes next
+    /// (`RestWords`).
+    case setLogged(exercise: String?)
     /// The set Log set would log now, or nil when there's none (wayloncore/tyleralocke#573).
     case setNext(NextSet?)
     case unknown(type: String)
@@ -181,7 +183,8 @@ public enum BridgeMessage: Equatable, Sendable {
             let t = nested ?? (try? JSONDecoder().decode(RawToday.self, from: data)) ?? RawToday()
             return .today(t.info)
         case "set.logged":
-            return .setLogged
+            let name = ((try? JSONDecoder().decode(LoggedOnly.self, from: data))?.exercise ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return .setLogged(exercise: name.isEmpty ? nil : String(name.prefix(120)))
         case "set.next":
             return .setNext(NextSet((try? JSONDecoder().decode(NextOnly.self, from: data))?.next))
         default:
@@ -267,6 +270,7 @@ public enum BridgeMessage: Equatable, Sendable {
     private struct TypeOnly: Decodable { var type: String? }
     // read on their own, so an odd `next` or `nextSet` never loses the message
     private struct NextOnly: Decodable { var next: RawNextSet? }
+    private struct LoggedOnly: Decodable { var exercise: String? }
     private struct NextSetOnly: Decodable { var nextSet: RawNextSet? }
 
     /// `today`, read leniently: a field of the wrong type is skipped instead of losing the whole message.

@@ -71,7 +71,7 @@ final class LockScreenFixTests: XCTestCase {
         XCTAssertEqual(b.nextSet?.set, 2)
         // the page wakes: it logs set 1 and names set 2, twice (a repeat), then starts its own rest
         let two = press.following!
-        b.apply(.setLogged, now: s(40))
+        b.apply(.setLogged(exercise: nil), now: s(40))
         b.apply(.setNext(two), now: s(40))
         b.apply(.setNext(two), now: s(41))
         b.apply(.timerStart(TimerStart(id: "rest:10", kind: .rest, label: "Rest", endsAt: s(100), startedAt: s(10),
@@ -223,7 +223,7 @@ final class LockScreenFixTests: XCTestCase {
 
     func testAnOldCopyIsDropped() {
         var b = boardWithSet()
-        b.apply(.setLogged, now: s(5))
+        b.apply(.setLogged(exercise: nil), now: s(5))
         let old = TimerBoard.restored(from: b.snapshot, now: s(TimerBoard.quietLimit + 60))
         XCTAssertNil(old.workout, "a workout left an hour ago isn't brought back")
         XCTAssertEqual(TimerBoard.restored(from: nil, now: s(0)), TimerBoard())

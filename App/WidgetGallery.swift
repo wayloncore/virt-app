@@ -141,14 +141,30 @@ struct WidgetGallery: View {
         var paused = resting
         paused.paused = true; paused.endsAt = nil; paused.remaining = 64; paused.fraction = 0.3
         paused.setDetail = "set 10 of 12 · 102.5 × 12"; paused.nextSet = "Chest press machine · set 10 of 12 · 102.5 × 12"
+        // a rest before a different exercise (Nov 28, RestWords): "Next exercise", the next exercise's name over it
+        let row = NextSet(exercise: "Seated row machine", set: 1, of: 3, weight: 90, reps: 12,
+                          label: "Seated row machine · set 1 of 3 · 90 × 12", rest: 90)
+        var nextUp = TimerDisplay(id: "rest:2", kind: .rest, label: RestWords.nextExercise, next: row.exercise,
+                                  endsAt: now.addingTimeInterval(84), progressFrom: now.addingTimeInterval(-6))
+        nextUp.nextSet = row.label; nextUp.logButton = "Log set 1"
+        nextUp.setExercise = row.exercise; nextUp.setDetail = row.detail
         return VStack(spacing: 14) {
-            tile(resting, "Resting: the next set under the clock")
-            tile(between, "Between sets: the next set and Log set")
-            tile(logged, "Logged the last set, waiting for the page")
-            // the smallest iPhone (iPhone SE, 375 points wide): the card is about 343 wide there
-            tile(resting, "Resting, iPhone SE width", w: 343)
-            tile(paused, "Paused, a long set, iPhone SE width", w: 343)
+            Group {
+                tile(resting, "Resting: the next set under the clock")
+                tile(nextUp, "Resting before the next exercise")
+                tile(between, "Between sets: the next set and Log set")
+                tile(logged, "Logged the last set, waiting for the page")
+                // the smallest iPhone (iPhone SE, 375 points wide): the card is about 343 wide there
+                tile(resting, "Resting, iPhone SE width", w: 343)
+                tile(nextUp, "Before the next exercise, iPhone SE width", w: 343)
+                tile(paused, "Paused, a long set, iPhone SE width", w: 343)
+            }
             lockTile(islandBottom(resting), w: 362, h: 130, "Dynamic Island, expanded (bottom), 393-point iPhone")
+            lockTile(islandBottom(nextUp), w: 362, h: 130, "Dynamic Island, expanded, before the next exercise")
+            // the corner beside the camera is narrow: there the name falls back to its short form
+            lockTile(TimerName(d: nextUp).font(.headline).foregroundStyle(Color.virtAccent)
+                        .frame(width: 100, alignment: .leading).padding(8).background(Color.black),
+                     w: 140, h: 44, "Beside the camera, about 100 points: the short form")
             lockTile(islandBottom(paused), w: 362, h: 130, "Dynamic Island, expanded, paused and long")
         }
         .padding(.vertical, 8)
@@ -159,7 +175,7 @@ struct WidgetGallery: View {
     func islandBottom(_ d: TimerDisplay) -> some View {
         VStack(spacing: 8) {
             HStack {
-                Label(d.label, systemImage: symbol(d.kind)).font(.headline).foregroundStyle(Color.virtAccent).lineLimit(1)
+                TimerName(d: d).font(.headline).foregroundStyle(Color.virtAccent)
                 Spacer()
                 ClockText(d: d).font(.title2.weight(.semibold)).foregroundStyle(.white)
             }

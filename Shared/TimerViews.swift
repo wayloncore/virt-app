@@ -67,6 +67,19 @@ struct LockScreenTimer: View {
     }
 }
 
+/// A countdown's name where room is short (the expanded Dynamic Island's corner beside the camera): the whole name
+/// where it fits, its short form where it doesn't ("Next exercise", then "Next": VirtCore's `RestWords.short`).
+struct TimerName: View {
+    let d: TimerDisplay
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Label(d.label, systemImage: symbol(d.kind)).lineLimit(1)
+            Label(d.shortLabel, systemImage: symbol(d.kind)).lineLimit(1)
+        }
+    }
+}
+
 /// The countdown (or a stopwatch counting up), drawn by the system so it keeps time with the app asleep.
 struct ClockText: View {
     let d: TimerDisplay

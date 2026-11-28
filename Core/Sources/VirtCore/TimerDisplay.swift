@@ -8,7 +8,7 @@ import Foundation
 public struct TimerDisplay: Codable, Hashable, Sendable {
     public var id: String
     public var kind: TimerKind
-    /// "Rest", "Plank", "Work · round 2 of 6"
+    /// "Rest", "Next exercise" (a rest before a different exercise, `RestWords`), "Plank", "Work · round 2 of 6"
     public var label: String
     /// What comes after: "set 2 of Plank", "Recovery, round 2 of 6", "Done"
     public var next: String
@@ -92,6 +92,10 @@ public struct TimerDisplay: Codable, Hashable, Sendable {
         d.setDetail = name.isEmpty ? "" : "Rest over · up next"
         return d
     }
+
+    /// The label where there's only room for a word (the expanded Dynamic Island's leading corner): "Next" for
+    /// "Next exercise", the label itself otherwise. Worked out, not stored, so the saved content is unchanged.
+    public var shortLabel: String { RestWords.short(label) }
 
     /// A clock face for a number of seconds: 0:45, 1:30, 12:05. Rounds up, so 0:00 shows only at zero.
     public static func clock(_ seconds: TimeInterval) -> String {

@@ -48,8 +48,13 @@ struct TimerLiveActivity: Widget {
             let between = d.betweenSets == true
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(between ? (d.setExercise ?? d.label) : d.label, systemImage: between ? "dumbbell.fill" : symbol(d.kind))
-                        .font(.headline).foregroundStyle(Color.virtAccent).lineLimit(1)
+                    if between {
+                        Label(d.setExercise ?? d.label, systemImage: "dumbbell.fill")
+                            .font(.headline).foregroundStyle(Color.virtAccent).lineLimit(1)
+                    } else {
+                        // "Next exercise" where it fits beside the camera, "Next" where it doesn't (Nov 28)
+                        TimerName(d: d).font(.headline).foregroundStyle(Color.virtAccent)
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if !between { ClockText(d: d).font(.title2.weight(.semibold)).foregroundStyle(.white) }

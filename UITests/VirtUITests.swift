@@ -485,6 +485,9 @@ final class VirtUITests: XCTestCase {
         app.swipeUp()
         sleep(1)
         shot("widgets-activity-2")
+        app.swipeUp()
+        sleep(1)
+        shot("widgets-activity-3")
     }
 
     /// Log set (wayloncore/tyleralocke#573): the page names the next set, the Live Activity shows it between sets,
@@ -556,6 +559,44 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 10))
         web.buttons["Finish"].tap()
         XCTAssertTrue(waitStatus(app, contains: "next none"), status(app))
+    }
+
+    /// Tyler, Nov 27: "instead of the word rest between workouts I want next exercise starts in: ... but in between
+    /// reps/sets it's still rest". The Live Activity's name for a rest: "Rest" between sets of the same exercise (Log
+    /// set's own rest, then the page's), "Next exercise" before a different one, shown on the Lock Screen's view and in
+    /// the expanded Dynamic Island at their real widths.
+    func testARestBeforeTheNextExerciseSaysSo() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page])
+        let web = app.webViews["studio"]
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), status(app))
+        web.buttons["Open exercise"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "next Chest press machine · set 2 of 4 · 105 × 10"), status(app))
+        XCTAssertTrue(app.buttons["dbg-log"].waitForExistence(timeout: 10))
+        app.buttons["dbg-log"].tap()
+        XCTAssertTrue(web.staticTexts["logged: 1"].waitForExistence(timeout: 10), "the page logged the set")
+        XCTAssertTrue(waitStatus(app, contains: "timer rest:"), "the page's rest took over: \(status(app))")
+        XCTAssertTrue(waitStatus(app, contains: "label Rest · "), "another set of the same exercise: Rest: \(status(app))")
+
+        web.buttons["Next exercise rest"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "label Next exercise · "), "before a different exercise: \(status(app))")
+        XCTAssertTrue(waitStatus(app, contains: "activity on", 5), status(app))
+        // at real width: the Lock Screen's view in Notification Center, then the expanded Dynamic Island
+        XCUIDevice.shared.press(.home)
+        sleep(3)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.005))
+        top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.7)))
+        sleep(3)
+        shot("next-exercise-live-activity")
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.03)).press(forDuration: 1.2)
+        sleep(2)
+        shot("next-exercise-island-expanded")
+        app.activate()
+        XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 10))
+        web.buttons["Finish"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "timer none"), status(app))
     }
 
     /// Tyler, Nov 25: Log set from the lock screen with no Face ID. The simulator can't lock and press a Live Activity
@@ -928,7 +969,7 @@ final class VirtUITests: XCTestCase {
     <p id="has">handler: no</p>
     <p><button onclick="go()" style="font-size: 20px">Start rest</button> <button onclick="fin()" style="font-size: 20px">Finish</button></p>
     <p><button onclick="today(false)">Post today</button> <button onclick="today(true)">Post done</button> <button onclick="post({ type: 'set.logged' })">Log set</button></p>
-    <p><button onclick="openEx()">Open exercise</button></p>
+    <p><button onclick="openEx()">Open exercise</button> <button onclick="nextUp()">Next exercise rest</button></p>
     <p id="cmd">command: none</p>
     <p id="logged">logged: 0</p>
     <p id="logid">log id: none</p>
@@ -960,6 +1001,14 @@ final class VirtUITests: XCTestCase {
       post({ type: 'set.next', next: nextSet() });
     }
     function fin() { post({ type: 'timer.cancel', id: 'rest:' + start }); post({ type: 'workout.finish', summary: { mins: 1, exercises: 1, sets: 1, steps: 0 } }); }
+    // the chest press's last set logged by hand: the rest before the next exercise, as Training sends it
+    function nextUp() {
+      const leg = { exercise: 'Leg press', set: 1, of: 3, weight: 180, reps: 12, label: 'Leg press · set 1 of 3 · 180 × 12', rest: 90 };
+      post({ type: 'set.logged', exercise: 'Chest press machine' });
+      start = Date.now(); end = start + 90000; paused = false;
+      post({ type: 'timer.start', id: 'rest:' + start, kind: 'rest', label: 'Rest', endsAt: end, startedAt: start, next: { label: 'Leg press' }, nextSet: leg });
+      post({ type: 'set.next', next: leg });
+    }
     addEventListener('kinetic:command', (e) => {
       const c = typeof e.detail === 'string' ? e.detail : e.detail && e.detail.command;
       document.getElementById('cmd').textContent = 'command: ' + c + (c === 'rest' ? ' ' + e.detail.seconds : '');
