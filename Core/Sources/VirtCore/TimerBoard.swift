@@ -63,6 +63,10 @@ public struct TimerBoard: Equatable, Sendable {
     public var nextSet: NextSet?
     /// The set Log set just logged, until the page answers (shown as "Logged" while there's nothing else to show).
     public var justLogged: NextSet?
+    /// After the page's rest ran to zero: what it said comes next ("Plank"), kept while there's no timer and no set to
+    /// log, so the Live Activity says so instead of ending mid-workout (a circuit's timed exercise is next). Cleared by
+    /// the next timer, the next `set.next`, a press, or the workout's end. Not kept across launches.
+    public var restOver: (id: String, next: String)?
 
     public init() {}
 
@@ -70,6 +74,7 @@ public struct TimerBoard: Equatable, Sendable {
         a.workout == b.workout && a.countdown == b.countdown && a.lastMessageAt == b.lastMessageAt && a.lastButtonAt == b.lastButtonAt
             && a.lastEnd?.id == b.lastEnd?.id && a.lastEnd?.at == b.lastEnd?.at && a.lastSummary == b.lastSummary
             && a.nextSet == b.nextSet && a.justLogged == b.justLogged
+            && a.restOver?.id == b.restOver?.id && a.restOver?.next == b.restOver?.next
     }
 
     // MARK: - The page's messages (the page is the source of truth)
@@ -88,13 +93,16 @@ public struct TimerBoard: Equatable, Sendable {
             lastEnd = nil
             nextSet = nil
             justLogged = nil
+            restOver = nil
         case .timerStart(let s):
             if workout == nil { workout = Workout(title: "Workout", startedAt: now) }
+            restOver = nil
             start(s, now: now)
             if let n = s.nextSet { nextSet = n; justLogged = nil }
         case .setNext(let n):
             nextSet = n
             justLogged = nil
+            restOver = nil
         case .timerPause(let id, let remaining):
             guard var c = countdown, c.id == id else { return }
             c.paused = true
@@ -122,10 +130,13 @@ public struct TimerBoard: Equatable, Sendable {
             guard let c = countdown, c.id == id else { return }
             lastEnd = (id, min(c.endsAt ?? now, now))
             countdown = nil
+            // the page's own rest (not one Virt started for Siri or a press, which just ends)
+            restOver = c.kind == .rest && !id.hasPrefix(Self.nativePrefix) ? (id, c.next) : nil
         case .timerCancel(let id):
             guard let c = countdown, c.id == id else { return }
             lastEnd = (id, now)
             countdown = nil
+            restOver = nil
         case .today, .setLogged, .unknown:
             break
         }
@@ -245,14 +256,16 @@ public struct TimerBoard: Equatable, Sendable {
     }
 
     /// Log set (#573), before the page hears (it may be asleep while the phone is locked): the set's rest starts at
-    /// once when the plan gives one, and the next set shows as the page will most likely name it (the same exercise,
-    /// one set on), so Log set works again at the rest's zero with the page still asleep. The page logs each tap in
+    /// once when the plan gives one, and the next set shows as the page says it will be (`then`: in a superset or
+    /// circuit, the next exercise of the round) or, from an older page, as it will most likely name it (the same
+    /// exercise, one set on), so Log set works again at the rest's zero with the page still asleep. The page logs each tap in
     /// order, from the moment it was tapped, so its own rest lines up with this one. Nothing to log: nothing happens.
     public mutating func logSet(now: Date) {
         guard workout != nil, let n = nextSet else { return }
         lastButtonAt = now
         nextSet = n.following
         justLogged = n
+        restOver = nil
         if let r = n.rest {
             let id = Self.nativePrefix + String(Int((now.timeIntervalSince1970 * 1000).rounded()))
             apply(.timerStart(TimerStart(id: id, kind: .rest, label: "Rest", endsAt: now.addingTimeInterval(TimeInterval(r)),
@@ -303,7 +316,11 @@ public struct TimerBoard: Equatable, Sendable {
                 return d
             }
             // just logged the last set of an exercise with no rest: "Logged" until the page says what's next
-            guard let j = justLogged else { return nil }
+            guard let j = justLogged else {
+                // the page's rest ran out with no set to log (a circuit's timed exercise is next): say what's next
+                if let r = restOver { return TimerDisplay.restOver(id: r.id, next: r.next) }
+                return nil
+            }
             var d = TimerDisplay(id: "logged:\(j.exercise):\(j.set)", kind: .other, label: j.exercise, next: "")
             d.betweenSets = true
             d.setExercise = j.exercise

@@ -49,7 +49,8 @@ public struct TimerDisplay: Codable, Hashable, Sendable {
     }
 
     /// What to show at `now`: this, until its zero; after it, the step from `later` that's running then (its label, its
-    /// countdown, and the one after it as next). After a rest with nothing following, the next set and Log set. The
+    /// countdown, and the one after it as next). After a rest with nothing following, the next set and Log set, or with
+    /// no set to log, what's next in words (`restOver`). The
     /// Live Activity calls it when it draws (at each update, and at the stale date, which is this step's zero), and the
     /// app when it refreshes, so neither waits at 0:00 for the page.
     public func current(at now: Date) -> TimerDisplay {
@@ -75,7 +76,21 @@ public struct TimerDisplay: Codable, Hashable, Sendable {
             d.setExercise = setExercise; d.setDetail = setDetail
             return d
         }
+        // a rest over with nothing to log by a press (in a circuit, a timed exercise's turn; a cardio step next):
+        // what's next in words, never a clock left at 0:00
+        if kind == .rest, steps.isEmpty { return TimerDisplay.restOver(id: id, next: next) }
         return self
+    }
+
+    /// After a rest's zero with no set to log: what comes next, by name ("Plank", "Round 2 of 3"), with no button; just
+    /// "Rest over" when the page gave no name. Drawn as the between-sets state.
+    public static func restOver(id: String, next: String) -> TimerDisplay {
+        let name = next.trimmingCharacters(in: .whitespaces)
+        var d = TimerDisplay(id: "rest-over:\(id)", kind: .other, label: name.isEmpty ? "Rest over" : name, next: "")
+        d.betweenSets = true
+        d.setExercise = name.isEmpty ? "Rest over" : name.prefix(1).uppercased() + name.dropFirst()
+        d.setDetail = name.isEmpty ? "" : "Rest over · up next"
+        return d
     }
 
     /// A clock face for a number of seconds: 0:45, 1:30, 12:05. Rounds up, so 0:00 shows only at zero.
