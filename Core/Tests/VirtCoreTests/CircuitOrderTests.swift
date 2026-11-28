@@ -140,6 +140,51 @@ final class CircuitOrderTests: XCTestCase {
         XCTAssertEqual(hold.current(at: s(31)), hold)
     }
 
+    /// The page awake at a rest's zero with the plank next: it sends `timer.end` and nothing else. The Live Activity
+    /// says what's next until the plank's timer starts; a skipped rest, a rest Virt started itself and a finished
+    /// workout just end as before.
+    func testThePagesRestEndsWithNothingToLog() {
+        var b = TimerBoard()
+        b.apply(.workoutStart(title: "Made-up circuit"), now: s(0))
+        b.apply(.setNext(nil), now: s(0))
+        let rest = TimerStart(id: "rest:0", kind: .rest, label: "Rest", endsAt: s(15), startedAt: s(0), next: "Plank")
+        b.apply(.timerStart(rest), now: s(0))
+        b.apply(.timerEnd(id: "rest:0"), now: s(15))
+        let over = b.display(now: s(16))
+        XCTAssertEqual(over?.betweenSets, true)
+        XCTAssertEqual(over?.setExercise, "Plank")
+        XCTAssertEqual(over?.setDetail, "Rest over · up next")
+        XCTAssertNil(over?.logButton)
+        XCTAssertTrue(b.alerts(now: s(16)).isEmpty)
+        // the plank's own timer replaces it
+        b.apply(.timerStart(TimerStart(id: "hold:20", kind: .hold, label: "Plank", endsAt: nil, startedAt: s(20), next: "Stop and log")), now: s(20))
+        XCTAssertEqual(b.display(now: s(21))?.label, "Plank")
+        XCTAssertNil(b.restOver)
+        // a set to log comes first
+        b.apply(.timerEnd(id: "hold:20"), now: s(40))
+        b.apply(.timerStart(TimerStart(id: "rest:40", kind: .rest, label: "Rest", endsAt: s(100), startedAt: s(40), next: "round 2 of 3")), now: s(40))
+        b.apply(.setNext(NextSet(exercise: "TRX push-up", set: 2, of: 2, reps: 10, label: "Round 2 of 3 · TRX push-up · 10 reps")), now: s(40))
+        b.apply(.timerEnd(id: "rest:40"), now: s(100))
+        XCTAssertEqual(b.display(now: s(101))?.logButton, "Log set 2")
+        // Skip on a rest: no "rest over"
+        var c = TimerBoard()
+        c.apply(.workoutStart(title: "Made-up circuit"), now: s(0))
+        c.apply(.timerStart(rest), now: s(0))
+        c.apply(.timerCancel(id: "rest:0"), now: s(5))
+        XCTAssertNil(c.display(now: s(6)))
+        // the workout finished: nothing left
+        c.apply(.timerStart(rest), now: s(10))
+        c.apply(.timerEnd(id: "rest:0"), now: s(25))
+        c.apply(.workoutFinish(WorkoutSummary(mins: 30, exercises: 4, sets: 16, steps: 0)), now: s(30))
+        XCTAssertNil(c.display(now: s(31)))
+        // long after, it's gone with the workout's other signs
+        var d = TimerBoard()
+        d.apply(.workoutStart(title: "Made-up circuit"), now: s(0))
+        d.apply(.timerStart(rest), now: s(0))
+        d.apply(.timerEnd(id: "rest:0"), now: s(15))
+        XCTAssertNil(d.display(now: s(15 + TimerBoard.quietLimit + 1)))
+    }
+
     /// Kept on the phone and read back by the version before: `then` and `after` are added, optional fields.
     func testSavedCopyStaysReadable() throws {
         guard case .setNext(let n?) = read(#"{"type":"set.next","next":\#(pushUp)}"#) else { return XCTFail() }

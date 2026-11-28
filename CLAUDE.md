@@ -124,7 +124,8 @@ this one, in order: the next exercise of the round, never the same exercise agai
 end comes next), `nextSet.after` (what the rest it starts leads to, "Plank") and `rest` (the 15 s switch, or the
 round's rest). Virt shows those instead of guessing (`NextSet.following`); an older page sends neither and Virt
 guesses as before. A rest that reaches zero with no set to log shows what's next in words ("Plank · Rest over · up
-next", `TimerDisplay.restOver`), never a clock left at 0:00.
+next", `TimerDisplay.restOver`), never a clock left at 0:00: from the activity's own saved content when the page is
+asleep, and from the board (`TimerBoard.restOver`) when the page ends its rest and says nothing more.
 Virt already reads an optional
 `upcoming` list on `timer.start` (the steps after this one, each `{ id, kind, label, endsAt }`) and the sound keeper
 plays each of their zeros; until the page sends it, only the running step's zero sounds while the phone is locked.

@@ -31,8 +31,11 @@ final class TimerBoardTests: XCTestCase {
 
         // zero: the page ends the rest and starts the timed hold the same moment
         b.apply(.timerEnd(id: "rest:0.0"), now: s(60))
-        XCTAssertNil(b.display(now: s(60)))
+        // between the two (no set to log by a press): what's next in words, never a clock at 0:00 (Nov 27)
+        XCTAssertEqual(b.display(now: s(60))?.setExercise, "Set 2 of Plank")
+        XCTAssertNil(b.display(now: s(60))?.endsAt)
         b.apply(.timerStart(TimerStart(id: "hold:60", kind: .hold, label: "Plank", endsAt: s(105), startedAt: s(60), next: "Logged at the time")), now: s(60))
+        XCTAssertEqual(b.display(now: s(60))?.label, "Plank")
         XCTAssertEqual(b.alerts(now: s(60)), [PlannedAlert(identifier: "virt.timer.hold:60", fireAt: s(105), title: "Plank logged", body: "", cue: .rest, length: 45)])
         b.apply(.timerEnd(id: "hold:60"), now: s(105))
         XCTAssertTrue(b.alerts(now: s(105)).isEmpty)
