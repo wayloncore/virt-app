@@ -138,13 +138,13 @@ final class CountInTests: XCTestCase {
 
     func testComposeAndSlice() {
         let rate = 4
-        let tick: [Float] = [1, 0.5]
+        let tick: [Float] = [0.5, 0.25]
         let zero: [Float] = [0.8, 0.4]
         let w = LeadIn.compose(tick: tick, zero: zero, rate: rate)
         XCTAssertEqual(w.count, 3 * rate + zero.count)
         for k in 0..<3 {
-            XCTAssertEqual(w[k * rate], LeadIn.tickVolume, accuracy: 1e-6, "a beat at \(k) s")
-            XCTAssertEqual(w[k * rate + 1], 0.5 * LeadIn.tickVolume, accuracy: 1e-6)
+            XCTAssertEqual(w[k * rate], 0.5 * LeadIn.tickVolume, accuracy: 1e-6, "a beat at \(k) s")
+            XCTAssertEqual(w[k * rate + 1], 0.25 * LeadIn.tickVolume, accuracy: 1e-6)
             XCTAssertEqual(w[k * rate + 2], 0)
         }
         XCTAssertEqual(Array(w[12...]), zero, "the zero sound at exactly 3 s")
@@ -229,14 +229,24 @@ final class CountInTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: Self.root.appendingPathComponent("App/Sounds/\(SoundStyle.firstStartFile)").path))
     }
 
-    /// Nov 27: Chime, Digital and the green light at the tone styles' level (-1.5 dBFS peak), by gain alone.
-    func testEveryStylesFilesAreAtTheSamePeak() throws {
-        var names = Set<String>()
-        for style in SoundStyle.allCases where style != .classic { names.formUnion(style.files) }
-        names.insert(SoundStyle.startFile)
-        for n in names.sorted() {
-            let peak = try caf(n).samples.map(abs).max() ?? 0
-            XCTAssertEqual(20 * log10(Double(peak)), -1.5, accuracy: 0.05, n)
-        }
+    func peak(_ n: String) throws -> Double { 20 * log10(Double(try caf(n).samples.map(abs).max() ?? 0)) }
+
+    /// Nov 27: louder by one gain per style. The tone styles and the green light at -1.5 dBFS peak; Chime and Digital
+    /// each +5.5 dB on every file, so their loudest zero is at -1.5 and the ticks and clicks stay as far under it as
+    /// Tyler approved.
+    func testLevelsAndTheBalanceInsideEachStyle() throws {
+        for s in SoundStyle.allCases where s.isTone { XCTAssertEqual(try peak(s.file(.go)), -1.5, accuracy: 0.05, s.rawValue) }
+        XCTAssertEqual(try peak(SoundStyle.startFile), -1.5, accuracy: 0.05)
+        // (file, peak before Nov 27): each now exactly 5.5 dB up
+        let before: [(String, Double)] = [
+            ("virt-chime-go.caf", -7.0), ("virt-chime-rest.caf", -7.0), ("virt-chime-finish.caf", -9.0),
+            ("virt-chime-tick.caf", -22.9), ("virt-chime-set.caf", -29.94),
+            ("virt-digital-go.caf", -7.6), ("virt-digital-rest.caf", -7.0), ("virt-digital-finish.caf", -9.33),
+            ("virt-digital-tick.caf", -29.0), ("virt-digital-set.caf", -35.25),
+        ]
+        for (n, p) in before { XCTAssertEqual(try peak(n), p + 5.5, accuracy: 0.06, n) }
+        // the count-in's beats: 10 to 12 dB under a tone style's zero
+        let beat = try peak("virt-chime-tick.caf") + 20 * log10(Double(LeadIn.tickVolume))
+        XCTAssertEqual(beat - (-1.5), -11, accuracy: 1)
     }
 }

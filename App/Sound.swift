@@ -7,8 +7,9 @@ import VirtCore
 /// click when a set is logged, and a warm finish. They mix with his music: plain ambient sound normally; for a zero's
 /// sound, with music playing, the music ducks from the count-in's first beat until the zero sound ends, and comes back.
 /// The lock-screen sound keeper (BackgroundSound) plays the same count-in and zero, as the same one sound.
-/// Every file is at the same -1.5 dBFS peak (Nov 27: "The sound could be louder"); `volume` sets how loud each cue
-/// plays against the others.
+/// Nov 27 ("The sound could be louder"): each style's files got one gain (+5.5 dB for Chime and Digital), so the loudest
+/// zero is at -1.5 dBFS like the tone styles and the balance inside the style is as it was; `volume` sets how loud each
+/// cue plays against the others.
 ///
 /// Settings (Virt's settings sheet; saved-data rule: new keys only): `sounds.enabled` (on unless turned off) and
 /// `sounds.style` (SoundStyle's raw value).
@@ -100,7 +101,7 @@ import VirtCore
 
     static func volume(_ cue: SoundCue) -> Float {
         switch cue {
-        case .leadIn: return LeadIn.tickVolume  // 0.55; the count-in bakes its ticks in at this volume
+        case .leadIn: return 0.55  // a tick on its own (the count-in bakes its beats in at LeadIn.tickVolume instead)
         case .set: return 0.6
         case .go, .rest: return 1  // the zeros at full volume (Tyler, Nov 27: he wants them loud)
         case .finish: return 0.8

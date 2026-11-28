@@ -171,8 +171,11 @@ public enum LeadIn {
     public static let ahead: TimeInterval = 0.02
     /// And this much after the step began (the previous zero, or the countdown's start), so it never sits on top of it.
     public static let afterStart: TimeInterval = 0.25
-    /// How loud the ticks play against the zero sound (the same as the app's own tick volume, SoundBoard.volume).
-    public static let tickVolume: Float = 0.55
+    /// How loud the beats are baked into the count-in, as a gain on the tick file (Nov 27). With the files in the
+    /// balance Tyler approved (Chime's tick at -17.4 dBFS peak), 1.76 (+4.9 dB) puts the beats at -12.5, 11 dB under a
+    /// tone style's zero (-1.5): clearly there over music, well under the zero. It's a gain in the samples (more than
+    /// a player's volume can give); nothing clips (a tick never overlaps the zero sound).
+    public static let tickVolume: Float = 1.76
 
     /// How many beats of the count-in still fit before this zero: 3, 2, 1 or 0 (then just the zero sound).
     /// `length`: how long the step that ends here runs, when known (it can't start before the step does).

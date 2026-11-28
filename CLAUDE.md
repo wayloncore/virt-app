@@ -198,7 +198,8 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   change, each `upcoming` step) in every style, open or locked, has beats at -3, -2 and -1 s and the zero sound
   exactly on the zero. Chime and Digital's rest-ends is the green light (`virt-start-go-3s.caf`), whose three short
   tones a second apart are its count-in; every other zero is the style's tick three times (Digital's own, Chime's for
-  the rest) at `LeadIn.tickVolume` (0.55), then its zero sound. Both the app and the keeper play it as **one sound per
+  the rest) at `LeadIn.tickVolume` (1.76, a gain baked into the samples: Chime's beats at -12.5 dBFS, 11 dB under a tone
+  style's zero), then its zero sound. Both the app and the keeper play it as **one sound per
   zero** (`CountInSound` in App/Sound.swift builds it in memory from the bundled tick and zero, `LeadIn.compose`), so
   one `play(atTime:)` covers the beats and the zero, exactly a second apart. The timing rule: it keeps its rhythm and
   always ends on the zero; with less room (a countdown under ~3 s, a -15 or a resume inside the last 3 s, a zero less
@@ -208,9 +209,12 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   to the end of the zero sound; never while locked. The settings sample stays the work-ends zero sound alone. A 15 s
   switch rest is 3 s of count-in; accepted. The first green light (`virt-start-go.caf`, 1.2 s) stays in the app,
   untouched, for a rollback; no style plays it.
-- **Levels** (Nov 27: "The sound could be louder"): every Chime, Digital and green-light file is at -1.5 dBFS peak, the
-  tone styles' level, by gain alone (`scripts/sounds.py`'s `normalize`; `louder` for the Kenney picks). How loud each
-  cue plays against the others is `SoundBoard.volume` (ticks 0.55, click 0.6, finish 0.8, zeros 1). Classic's
+- **Levels** (Nov 27: "The sound could be louder"): one gain per style, never per file, so the balance inside a style
+  stays exactly as Tyler approved: Chime and Digital each +5.5 dB on every file (their loudest zero at -1.5 dBFS, the
+  tone styles' level; Chime's tick -17.4, set click -24.4; Digital's tick -23.5, click -29.8), by gain alone
+  (`scripts/sounds.py`'s `style_gain`; `louder` for the Kenney picks). The green light, shared by both, is leveled to
+  -1.5 on its own. Never normalize a tick or click by itself. How loud each cue plays against the others is
+  `SoundBoard.volume` (a lone tick 0.55, click 0.6, finish 0.8, zeros 1). Classic's
   `virt-chime.wav` is as it was (-2.9 dBFS). Nothing louder is done on purpose: no limiting or compression, and no
   ducking while locked (the one lever left, off: Tyler, Nov 27, "the music didn't quiet down but that's fine").
 - The tones (Tyler, Nov 27; `scripts/sounds.py tones`, -1.5 dBFS, the exact synthesis he approved): 14 tone
