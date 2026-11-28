@@ -57,12 +57,10 @@ import VirtCore
         frozenUnlockAt = unlockAt
         let rebuilt = Self.introDone
         Self.introDone = true
-        if launchAt != nil || unlockAt != nil {
-            flow = IntroFlow()  // the test build's still frames: the clips, held
-        } else {
-            flow = IntroFlow.atLaunch(liveWorkout: Engine.shared.liveAtLaunch(now: Date()), reduceMotion: reduceMotion,
-                                      sceneRebuilt: rebuilt)
-        }
+        // the test build's still frames: the clips, held
+        let still = launchAt != nil || unlockAt != nil
+        flow = still ? IntroFlow() : IntroFlow.atLaunch(liveWorkout: Engine.shared.liveAtLaunch(now: Date()),
+                                                        reduceMotion: reduceMotion, sceneRebuilt: rebuilt)
         playback.onLaunchEnded = { [weak self] in self?.launchEnded() }
         playback.onUnlockEnded = { [weak self] in self?.unlockEnded() }
         if let t = unlockAt {
