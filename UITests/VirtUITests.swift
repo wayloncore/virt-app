@@ -363,10 +363,10 @@ final class VirtUITests: XCTestCase {
         XCTAssertFalse(springboard.alerts.buttons["Allow"].waitForExistence(timeout: 3), "no notification ask for a workout")
         XCTAssertTrue(waitStatus(app, contains: "sound keeper on", 10), "the keeper runs in a workout: \(status(app))")
         let end = endsAt(app) ?? 0
-        // Chime: the green light starts 1.2 s before the zero
+        // Chime: the green light's count-in starts 3 s before the zero (Nov 27)
         XCTAssertTrue(status(app).range(of: #"cue \d+"#, options: .regularExpression) != nil, "a zero scheduled: \(status(app))")
         if let r = status(app).range(of: #"cue \d+"#, options: .regularExpression), let cue = Int(status(app)[r].dropFirst(4)) {
-            XCTAssertTrue(abs(cue - (end - 1)) <= 1, "the cue starts just before the zero: cue \(cue), ends \(end)")
+            XCTAssertTrue(abs(cue - (end - 3)) <= 1, "the count-in starts 3 s before the zero: cue \(cue), ends \(end)")
         }
         shot("keeper-on")
 

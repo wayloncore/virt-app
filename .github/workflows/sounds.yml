@@ -1,7 +1,8 @@
 # Virt's sounds from Kenney's free (CC0) packs. This repo's cloud sessions can't reach kenney.nl, but a runner can:
 #   survey: downloads the packs and prints every sound's length, level, pitch and decay, plus spectrograms of the
 #           likely bells, ticks and clicks (base64 between BEGIN-SHOT and END-SHOT, the same as the Mac run)
-#   pick:   trims and levels the files scripts/sound-picks.json names into App/Sounds/virt-digital-*.caf, and commits
+#   pick:   trims and levels the files scripts/sound-picks.json names into App/Sounds/virt-digital-*.caf (at -1.5 dBFS
+#           peak since Nov 27, the same as `sounds.py louder` made the files in the repo), and commits
 #           only those to the branch it ran on (the packs themselves are never kept)
 # Start it with the dispatch (mode survey or pick), or with [sounds-survey] or [sounds-pick] in a pushed commit's
 # message (a workflow only on a branch can't be dispatched yet).

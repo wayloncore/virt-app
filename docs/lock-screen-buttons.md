@@ -117,15 +117,16 @@ What Virt does now (`App/BackgroundSound.swift`, VirtCore's `SoundKeeper`):
 - **The sound keeper.** During a workout, with Virt off the screen and Sounds on, Virt keeps running in the
   background the way interval-timer apps do: the `audio` background mode, an audio session in `.playback` with
   `.mixWithOthers` (his music keeps playing at its own volume), and a silent loop. It plays each zero's sound itself
-  at the exact moment (`AVAudioPlayer.play(atTime:)`). The lock-screen buttons (an `AudioPlaybackIntent`, run in the
+  at the exact moment (`AVAudioPlayer.play(atTime:)`), with its three-second count-in (Nov 27: the beats at -3, -2
+  and -1 s and the zero sound as one sound, VirtCore's `LeadIn`). The lock-screen buttons (an `AudioPlaybackIntent`, run in the
   app) change the timer, and the zeros are scheduled again at once, so a rest started by Log set sounds too.
 - **No timer notifications, in any case.** If the keeper can't play (a phone call, Siri or an alarm took the audio,
   or iOS ended Virt), that zero is silent and the keeper starts again afterward. Old timer notifications from earlier
   builds are cleaned up. A workout no longer asks iOS for notification permission; only turning on the reminders does.
 - **Stops** when Virt comes forward (the app plays its own sounds, as before), the workout ends or goes quiet for
   45 minutes, or Sounds is turned off. The session goes back to `.ambient`.
-- **Trade-offs.** `.playback` plays through the silent switch (Sounds off in Virt still mutes it). No 3-2-1 ticks
-  while locked, only the zero. No ducking of his music while locked. A zero during a phone call is silent. A silent
+- **Trade-offs.** `.playback` plays through the silent switch (Sounds off in Virt still mutes it). The 3-2-1 plays
+  while locked too (Nov 27). No ducking of his music while locked. A zero during a phone call is silent. A silent
   loop runs during a workout (a small battery cost).
 - **If App Review asks** why Virt uses background audio: "Virt is a workout timer. During a workout only, it plays a
   short sound at the exact end of each rest or work interval while the phone is locked, mixed with the user's own

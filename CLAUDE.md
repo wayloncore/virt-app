@@ -167,7 +167,7 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   **sound keeper** holds the audio session in `.playback` with `.mixWithOthers` (his music keeps playing, untouched;
   no ducking while locked), keeps Virt running with a silent loop (the `audio` background mode, `UIBackgroundModes` in
   project.yml), and schedules every zero ahead (the running step and each `upcoming` one) with
-  `AVAudioPlayer.play(atTime:)`, the green light 1.2 s early. Every timer change (pause, resume, ±15, skip, a
+  `AVAudioPlayer.play(atTime:)`, each zero's sound starting with its three-second count-in (below). Every timer change (pause, resume, ±15, skip, a
   lock-screen Log set, which runs in the app as an `AudioPlaybackIntent`) schedules them again. It starts as Virt
   leaves the screen (`sceneWillResignActive`, while iOS still lets audio start) and stops, with the session back to
   `.ambient`, when Virt comes forward, the workout ends or goes quiet, or Sounds is turned off. Never outside a workout.
@@ -179,18 +179,36 @@ the same contract in its docs/kinetic/bridge.md). All additive:
 - Timer notifications from earlier builds are only cleaned up (`TimerAlerts`, category and thread `virt.timer`): any
   still pending go at launch, delivered ones every time Virt runs. Reminders are never touched.
 - Trade-offs: `.playback` ignores the silent switch, so the zero sounds with the switch on (Sounds off in Virt still
-  mutes it); the 3-2-1 ticks are not played while locked (only the zero); a silent loop runs during a workout (small
+  mutes it); the 3-2-1 count-in plays while locked too (Nov 27); a silent loop runs during a workout (small
   battery cost); a zero during a phone call is silent. For App Review, if it ever asks why Virt uses background
   audio: "Virt is a workout timer. During a workout only, it plays a short sound at the exact end of each rest or work
   interval while the phone is locked, mixed with the user's own music, so they can train without looking at the
   phone. Audio stops when the workout ends." The test build's status line shows
   `sound keeper on|off|interrupted|failed`, `cue <epoch>` (the next zero's sound) and `keeper-seen` (its states this
   launch); `-uitest-keeper-away` counts the app as away so the UI tests can watch it.
-- The green light (`virt-start-go.caf`, `scripts/sounds.py start`) is the sound when a rest ends in Chime and Digital:
-  three short tones then go, started 1.2 s early so the go lands on the zero (`SoundStyle.lead`), with no 3-2-1 ticks.
+- **The count-in** (Tyler, Nov 27, build 95: "I need it to start around 3 seconds not 1 second"; VirtCore's `LeadIn`,
+  `SoundStyle.lead` 3.0 for every zero): every timed zero (a rest's end, a timed work or hold's end, each interval
+  change, each `upcoming` step) in every style, open or locked, has beats at -3, -2 and -1 s and the zero sound
+  exactly on the zero. Chime and Digital's rest-ends is the green light (`virt-start-go-3s.caf`), whose three short
+  tones a second apart are its count-in; every other zero is the style's tick three times (Digital's own, Chime's for
+  the rest) at `LeadIn.tickVolume` (0.55), then its zero sound. Both the app and the keeper play it as **one sound per
+  zero** (`CountInSound` in App/Sound.swift builds it in memory from the bundled tick and zero, `LeadIn.compose`), so
+  one `play(atTime:)` covers the beats and the zero, exactly a second apart. The timing rule: it keeps its rhythm and
+  always ends on the zero; with less room (a countdown under ~3 s, a -15 or a resume inside the last 3 s, a zero less
+  than 3 s after the one before) it starts on the next whole beat that fits, or is just the zero sound (`LeadIn.beats`:
+  a beat needs 0.02 s ahead of now and 0.25 s after the step's start). A pause, ±15 or skip inside the count-in stops
+  it (`SoundKeeper.keeps`); a zero sound already ringing plays out. With Virt open the music ducks from the first beat
+  to the end of the zero sound; never while locked. The settings sample stays the work-ends zero sound alone. A 15 s
+  switch rest is 3 s of count-in; accepted. The first green light (`virt-start-go.caf`, 1.2 s) stays in the app,
+  untouched, for a rollback; no style plays it.
+- **Levels** (Nov 27: "The sound could be louder"): every Chime, Digital and green-light file is at -1.5 dBFS peak, the
+  tone styles' level, by gain alone (`scripts/sounds.py`'s `normalize`; `louder` for the Kenney picks). How loud each
+  cue plays against the others is `SoundBoard.volume` (ticks 0.55, click 0.6, finish 0.8, zeros 1). Classic's
+  `virt-chime.wav` is as it was (-2.9 dBFS). Nothing louder is done on purpose: no limiting or compression, and no
+  ducking while locked (the one lever left, off: Tyler, Nov 27, "the music didn't quiet down but that's fine").
 - The tones (Tyler, Nov 27; `scripts/sounds.py tones`, -1.5 dBFS, the exact synthesis he approved): 14 tone
   styles (Digital up to Quest jingle, `SoundStyle.isTone`; Digital itself is unchanged) play
-  their one tone (`virt-<id>-zero.caf`) at both zeros with no lead (so the 3-2-1 ticks play), with Chime's tick, click
+  their one tone (`virt-<id>-zero.caf`) at both zeros after the count-in, with Chime's tick, click
   and finish. The zeros play at full player volume. Settings shows them grouped (Classic, Clean, Playful); tapping one
   chooses it and plays its work-ends sound. Always "Buzzer horn", never the word buzz alone.
 - The lock: the cover shows only in the background (not for Control Center, Notification Center or the Face ID sheet)

@@ -411,7 +411,9 @@ import WidgetKit
     private func updateKeeper(now: Date) {
         let run = SoundKeeper.shouldRun(soundsOn: SoundBoard.shared.enabled, away: away || keeperAwayForTest, board: board,
                                         live: liveWorkout(now: now), now: now)
-        BackgroundSound.shared.update(run: run, cues: SoundKeeper.cues(board: board, style: SoundBoard.shared.style, now: now), now: now)
+        // Sounds off: no zeros at all (a count-in already sounding stops)
+        let cues = SoundBoard.shared.enabled ? SoundKeeper.cues(board: board, style: SoundBoard.shared.style, now: now) : []
+        BackgroundSound.shared.update(run: run, cues: cues, now: now)
     }
 
     private func updateActivity(now: Date) {
@@ -443,27 +445,36 @@ import WidgetKit
         }
     }
 
-    /// While the app is open: the soft 3-2-1 ticks, then the chime and a strong buzz at the exact zero (away from the
-    /// screen, the sound keeper plays the zero instead).
+    /// While the app is open: the zero's sound with its three-second count-in (Nov 27; VirtCore's `LeadIn`: the beats
+    /// at -3, -2 and -1 s, or the ones that still fit, then the zero sound on the zero), and a strong buzz at the exact
+    /// zero (away from the screen, the sound keeper plays the same sound instead).
     private func armChime(now: Date) {
         chimeTimer?.invalidate()
         chimeTimer = nil
         tickTimers.forEach { $0.invalidate() }
         tickTimers = []
-        guard let next = board.alerts(now: now).min(by: { $0.fireAt < $1.fireAt }) else { return }
+        let ahead = board.alerts(now: now).min(by: { $0.fireAt < $1.fireAt })
+        let aheadKey = ahead.map { SoundKeeper.key(identifier: $0.identifier, fireAt: $0.fireAt) }
+        // a count-in for a zero that was paused, moved or skipped stops (with Sounds off, every one)
+        SoundBoard.shared.stopCountIn(keeping: SoundBoard.shared.enabled ? aheadKey : nil, now: now)
+        guard let next = ahead, let key = aheadKey else { return }
         let cue = next.cue
         chimeTimer = exactTimer(at: next.fireAt) { self.zero(cue) }
-        // the zero sound starts early by its own lead-in (the green light's three tones), so its main tone is the zero
-        let lead = SoundBoard.shared.style.lead(cue)
-        let soundAt = next.fireAt.addingTimeInterval(-lead)
-        let key = SoundKeeper.key(identifier: next.identifier, fireAt: next.fireAt)
-        if soundAt > now {
-            tickTimers.append(exactTimer(at: soundAt) { self.zeroSound(cue, key: key) })
-        } else if soundStarted != key {
-            zeroSound(cue, key: key)  // armed again inside the lead-in (a page message just then): late, never missed
-        }
-        for at in LeadIn.ticks(zero: next.fireAt, now: now, length: next.length, lead: lead) {
-            tickTimers.append(exactTimer(at: at) { SoundBoard.shared.play(.leadIn) })
+        guard soundStarted != key else { return }
+        // the sound starts on the first beat that fits, so the zero sound lands on the zero
+        let beats = LeadIn.beats(zero: next.fireAt, now: now, length: next.length)
+        let soundAt = next.fireAt.addingTimeInterval(-TimeInterval(beats))
+        let zeroAt = next.fireAt
+        // a little ahead, so the player is set to start on the beat itself (play(atTime:)), not on the timer's tick
+        let armAt = soundAt.addingTimeInterval(-0.15)
+        if armAt > now {
+            let length = next.length
+            tickTimers.append(exactTimer(at: armAt) {
+                let n = LeadIn.beats(zero: zeroAt, now: Date(), length: length)
+                self.zeroSound(cue, key: key, beats: n, zeroAt: zeroAt)
+            })
+        } else {
+            zeroSound(cue, key: key, beats: beats, zeroAt: zeroAt)
         }
     }
 
@@ -474,13 +485,18 @@ import WidgetKit
         return t
     }
 
-    /// The zero's sound, while the app is open. Once per zero, and never one the sound keeper has played.
-    private func zeroSound(_ cue: SoundCue, key: String) {
+    /// The zero's sound with its count-in, while the app is open. Once per zero, and never one the sound keeper has
+    /// played.
+    private func zeroSound(_ cue: SoundCue, key: String, beats: Int, zeroAt: Date) {
         guard soundStarted != key else { return }
         soundStarted = key
         // the lock-screen sound keeper has it (scheduled or already sounding): never twice
         if BackgroundSound.shared.covers(key) { return }
-        if UIApplication.shared.applicationState == .active { SoundBoard.shared.play(cue) }
+        if UIApplication.shared.applicationState == .active, SoundBoard.shared.playZero(cue, beats: beats, key: key, zeroAt: zeroAt) {
+            // the app's count-in has started: if Virt leaves the screen during it, it plays on, and the keeper doesn't
+            // start a second one
+            BackgroundSound.shared.appStarted(key)
+        }
     }
 
     private func zero(_ cue: SoundCue) {
