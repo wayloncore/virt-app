@@ -344,7 +344,7 @@ import WidgetKit
         UIApplication.shared.isIdleTimerDisabled = keepAwake(now: now)
     }
 
-    // MARK: - Live workouts (the lock never asks during one)
+    // MARK: - Live workouts (no launch clip during one; the sound keeper plays its zeros)
 
     /// True while a workout is live: the page's word when it gives one, Virt's own rule otherwise (VirtCore's
     /// LiveWorkout).
@@ -526,7 +526,7 @@ import WidgetKit
         }
     }
 
-    /// The intro's stages so far this launch, for the test build's status line (AppLock records them; never saved).
+    /// The intro's stages so far this launch, for the test build's status line (AppCover records them; never saved).
     var introSeen: [String] = []
 
     /// One line for the test build: the timer, alerts, screen and activity.

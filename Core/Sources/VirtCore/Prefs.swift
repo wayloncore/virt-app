@@ -10,6 +10,10 @@ import Foundation
 // - The page posts `{ type: 'pref', key, value }`, `{ type: 'openNotificationSettings' }`, `{ type: 'deleteAccount' }`
 //   and `{ type: 'signOut' }` on the `kinetic` handler (`AppRequest`). Unknown keys and out-of-range values are
 //   ignored.
+// - No `lockAfter` (Nov 28): Virt has no lock of its own, so it never sends one, and an older page's
+//   `{ type: 'pref', key: 'lockAfter' }` is ignored quietly like any other key Virt doesn't know. The website reads an
+//   absent `lockAfter` as "no app lock" and shows no Lock and privacy row. Build 100's stored "Lock after"
+//   (`lock.after` in UserDefaults) stays on the phone, unread, so a rollback to it still finds the setting.
 
 /// The values the page sees, in the order it sees them.
 public struct AppPrefs: Equatable, Sendable {
@@ -22,20 +26,20 @@ public struct AppPrefs: Equatable, Sendable {
     public var reminders: Bool
     /// When the reminders come, "6:00 PM on Mon, Tue and Thu"; "" when they're off or Training hasn't said yet.
     public var reminderLine: String
-    public var lockAfter: LockAfter
     /// False only when iOS has Virt's notifications turned off (he said no once, or switched them off in Settings).
     /// Never asked yet reads as on: Virt asks when it needs them, and Settings can't help until iOS has asked.
     public var notifications: Bool
 
-    public init(sounds: Bool, soundStyle: SoundStyle, reminders: Bool, reminderLine: String, lockAfter: LockAfter, notifications: Bool) {
+    public init(sounds: Bool, soundStyle: SoundStyle, reminders: Bool, reminderLine: String, notifications: Bool) {
         self.sounds = sounds; self.soundStyle = soundStyle; self.reminders = reminders
-        self.reminderLine = reminderLine; self.lockAfter = lockAfter; self.notifications = notifications
+        self.reminderLine = reminderLine; self.notifications = notifications
     }
 
-    /// The object as JSON (valid JavaScript), keys always in this order; `soundStyles` last (added Nov 27).
+    /// The object as JSON (valid JavaScript), keys always in this order; `soundStyles` last (added Nov 27). No
+    /// `lockAfter` since Nov 28: Virt has no lock (the website reads it as optional).
     public var json: String {
         "{\"sounds\":\(sounds),\"soundStyle\":\(Self.quote(soundStyle.rawValue)),\"reminders\":\(reminders),"
-            + "\"reminderLine\":\(Self.quote(reminders ? reminderLine : "")),\"lockAfter\":\(Self.quote(lockAfter.rawValue)),"
+            + "\"reminderLine\":\(Self.quote(reminders ? reminderLine : "")),"
             + "\"notifications\":\(Self.quote(notifications ? "on" : "off")),\"soundStyles\":\(SoundStyle.listJSON)}"
     }
 
@@ -84,12 +88,12 @@ public enum ReminderLine {
 }
 
 /// What the page asks of Virt on the `kinetic` handler, beyond the workout's own messages. Not Engine messages: the
-/// app does them itself. nil for anything else, a key Virt doesn't know or a value out of range (ignored).
+/// app does them itself. nil for anything else, a key Virt doesn't know or a value out of range (ignored). That
+/// includes an older page's `lockAfter`: Virt has no lock since Nov 28.
 public enum AppRequest: Equatable, Sendable {
     case setSounds(Bool)
     case setSoundStyle(SoundStyle)
     case setReminders(Bool)
-    case setLockAfter(LockAfter)
     /// iOS Settings, at Virt's notifications.
     case openNotificationSettings
     /// The app's own Delete account flow (its native confirmation still asks).
@@ -125,7 +129,6 @@ public enum AppRequest: Equatable, Sendable {
         case ("sounds", .bool(let b)?): return .setSounds(b)
         case ("reminders", .bool(let b)?): return .setReminders(b)
         case ("soundStyle", .text(let s)?): return SoundStyle(rawValue: s).map { .setSoundStyle($0) }
-        case ("lockAfter", .text(let s)?): return LockAfter(rawValue: s).map { .setLockAfter($0) }
         default: return nil
         }
     }

@@ -1,31 +1,29 @@
 import XCTest
 
-/// Virt in the iPhone simulator: the Face ID lock (with the test build answering for Face ID), the studio's sign-in
-/// opens inside the app, the offline screen and Retry, and the bridge end to end with a stand-in page (the real Training page is behind the sign-in, which a GitHub Mac can't
+/// Virt in the iPhone simulator: the intro playing straight into Training with no lock (Nov 28: nothing asks for Face
+/// ID or the passcode), the app switcher's cover, the studio's sign-in opens inside the app, the offline screen and Retry, and the bridge end to end with a stand-in page (the real Training page is behind the sign-in, which a GitHub Mac can't
 /// pass): a rest's alert, the screen kept on, the Live Activity, and a lock-screen button reaching the page.
 final class VirtUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
-    /// Opens Virt. The test build answers for Face ID (`-uitest-skip-faceid`: Unlock works; `-uitest-faceid-fails`:
-    /// it never does), and by default this taps Unlock, the way Tyler would.
+    /// Opens Virt and, unless `waitForIntro` is false, waits for the intro (the launch clip, then the unlock clip) to
+    /// play into the app by itself: there's nothing to answer on the way, since Virt has no lock (Nov 28).
     /// `args` adds the test build's door: `-uitest-door-none` (the first screen) or `-uitest-door-friend`; Tyler's
     /// otherwise.
-    func launch(env: [String: String] = [:], unlock: Bool = true, faceIDFails: Bool = false, args: [String] = []) -> XCUIApplication {
+    func launch(env: [String: String] = [:], waitForIntro: Bool = true, args: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-uitest", "-uitest-reset", faceIDFails ? "-uitest-faceid-fails" : "-uitest-skip-faceid"] + args
+        app.launchArguments = ["-uitest", "-uitest-reset"] + args
         app.launchEnvironment = env
         app.launch()
-        if unlock {
-            let button = app.buttons["unlock"]
-            XCTAssertTrue(button.waitForExistence(timeout: 15), "the lock screen shows first")
-            button.tap()
-            XCTAssertTrue(app.otherElements["lock-screen"].waitForNonExistence(timeout: 5), "Unlock opens the app")
-            XCTAssertTrue(app.otherElements["unlocking"].waitForNonExistence(timeout: 10), "the unlock clip ends in Training")
+        if waitForIntro {
+            let intro = app.otherElements["intro"]
+            _ = intro.waitForExistence(timeout: 5)
+            XCTAssertTrue(intro.waitForNonExistence(timeout: 20), "the intro plays into the app by itself: \(introStage(app))")
         }
         return app
     }
 
-    /// Where the intro is, as the test build's lock screen says ("launch", "lock", "unlock" or "done").
+    /// Where the intro is, as the test build's intro window says ("launch", "unlock" or "done").
     func introStage(_ app: XCUIApplication) -> String {
         let t = app.staticTexts["intro-stage"]
         return t.exists ? String(t.label.dropFirst("intro ".count)) : "none"
@@ -65,6 +63,13 @@ final class VirtUITests: XCTestCase {
         let t = status(app)
         guard let r = t.range(of: #"ends at \d+"#, options: .regularExpression) else { return nil }
         return Int(t[r].dropFirst("ends at ".count))
+    }
+
+    /// How many `kinetic:prefs` events Virt has sent the page, as the status line says ("prefs sent 3").
+    func prefsSent(_ app: XCUIApplication) -> Int? {
+        let t = status(app)
+        guard let r = t.range(of: #"prefs sent \d+"#, options: .regularExpression) else { return nil }
+        return Int(t[r].dropFirst("prefs sent ".count))
     }
 
     /// Saves a screenshot as <name>.png in ~/virt-shots on the Mac (the workflow prints them into its log).
@@ -242,8 +247,17 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(status(app).contains("bundle fixture-1"), status(app))
         XCTAssertFalse(status(app).contains("failed"), status(app))
 
-        web.buttons["Sign out here"].tap()
-        XCTAssertTrue(app.staticTexts["welcome-line"].waitForExistence(timeout: 10), "signed out from the bundled page: the first screen")
+        let signOut = web.buttons["Sign out here"]
+        XCTAssertTrue(signOut.waitForExistence(timeout: 10), status(app))
+        signOut.tap()
+        // the sign-out's own signals, waited for like the rest of this test (it flaked on a fixed 10 s, Nov 28): Virt
+        // leaves the friend's door (the status line stops saying so, then hides under the first screen), and the first
+        // screen is up
+        let end = Date().addingTimeInterval(20)
+        while Date() < end, status(app).contains("door friend") { usleep(300_000) }
+        let welcome = app.staticTexts["welcome-line"]
+        if !welcome.waitForExistence(timeout: 10) { shot("bundled-sign-out-missing") }
+        XCTAssertTrue(welcome.exists, "signed out from the bundled page: the first screen: \(status(app))")
     }
 
     /// A guest in bundled mode: "Try a workout" opens virt-app://train/try with no session. A link to the site's
@@ -456,12 +470,7 @@ final class VirtUITests: XCTestCase {
 
     /// The widgets' own views at real size (a UI test can't add a widget to the Home Screen).
     func testWidgetGallery() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-uitest", "-uitest-reset", "-uitest-skip-faceid", "-uitest-widgets"]
-        app.launch()
-        let unlock = app.buttons["unlock"]
-        XCTAssertTrue(unlock.waitForExistence(timeout: 15))
-        unlock.tap()
+        let app = launch(args: ["-uitest-widgets"])
         sleep(2)
         shot("widgets-home")
         app.buttons["Lock"].tap()
@@ -581,8 +590,8 @@ final class VirtUITests: XCTestCase {
     }
 
     /// The video intro's frames, held still (the test build's VIRT_INTRO_AT and VIRT_UNLOCK_AT, seconds into each
-    /// clip): the word as the light crosses it, mid-wipe, the V growing, the launch clip's last frame, the lock
-    /// screen's still (the same frame), and the unlock clip flying into the V.
+    /// clip): the word as the light crosses it, mid-wipe, the V growing, the launch clip's last frame, and the unlock
+    /// clip flying into the V.
     func testIntroFrames() {
         let frames: [(String, [String: String])] = [
             ("intro-1-start", ["VIRT_INTRO_AT": "0.3"]),
@@ -590,7 +599,6 @@ final class VirtUITests: XCTestCase {
             ("intro-3-midwipe", ["VIRT_INTRO_AT": "2.3"]),
             ("intro-4-growing", ["VIRT_INTRO_AT": "2.95"]),
             ("intro-5-end", ["VIRT_INTRO_AT": "\(Self.launchLastFrame)"]),
-            ("intro-6-still", ["VIRT_INTRO": "off"]),
             ("unlock-1-start", ["VIRT_UNLOCK_AT": "0"]),
             ("unlock-2-zoom", ["VIRT_UNLOCK_AT": "0.6"]),
             ("unlock-2b-edges", ["VIRT_UNLOCK_AT": "0.9"]),
@@ -599,131 +607,67 @@ final class VirtUITests: XCTestCase {
         ]
         for (name, env) in frames {
             let app = XCUIApplication()
-            app.launchArguments = ["-uitest", "-uitest-reset", "-uitest-faceid-fails"]
+            app.launchArguments = ["-uitest", "-uitest-reset"]
             app.launchEnvironment = env.merging(["VIRT_TEST_HTML": Self.page]) { a, _ in a }
             app.launch()
-            XCTAssertTrue(app.otherElements["lock-screen"].waitForExistence(timeout: 15), name)
+            XCTAssertTrue(app.otherElements["intro"].waitForExistence(timeout: 15), name)
             sleep(2)
             shot(name)
             app.terminate()
         }
     }
 
-    /// Played for real: the launch clip ends by itself on the lock screen (no Unlock button over the clip), Unlock
-    /// plays the unlock clip, and it fades into Training.
-    func testIntroPlaysIntoTheLockScreenThenTraining() {
-        let app = launch(env: ["VIRT_TEST_HTML": Self.page], unlock: false)
-        XCTAssertTrue(app.otherElements["lock-screen"].waitForExistence(timeout: 15))
-        XCTAssertEqual(introStage(app), "launch", "the launch clip plays first")
-        XCTAssertFalse(app.buttons["unlock"].exists, "no button over the launch clip")
-        XCTAssertTrue(waitIntro(app, "lock", 8), "the launch clip ends on the lock screen: \(introStage(app))")
-        let button = app.buttons["unlock"]
-        XCTAssertTrue(button.waitForExistence(timeout: 3))
-        sleep(1)
-        shot("intro-7-lock")
-        button.tap()
-        XCTAssertTrue(app.otherElements["unlocking"].waitForExistence(timeout: 3), "the unlock clip plays")
-        usleep(700_000)
-        shot("unlock-5-live")
+    /// No lock (Tyler, Nov 28: "the phone might need the Face ID to log in with Apple, but not to log into the app
+    /// ever"): a fresh launch plays the launch clip, runs straight on into the unlock clip, and lands in Training by
+    /// itself. Nothing asks for Face ID or the passcode on the way: no Unlock button, no system prompt.
+    func testAFreshLaunchGoesStraightIntoTraining() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page], waitForIntro: false)
+        let intro = app.otherElements["intro"]
+        XCTAssertTrue(intro.waitForExistence(timeout: 10), "the intro first")
+        usleep(1_000_000)
+        shot("launch-1-clip")
+        _ = waitIntro(app, "unlock", 8)  // for the picture; the order is checked on the status line below
+        usleep(500_000)
+        shot("launch-2-fly-in")
+        XCTAssertTrue(intro.waitForNonExistence(timeout: 15), "the intro plays into Training by itself: \(introStage(app))")
         let web = app.webViews["studio"]
-        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 8), "then Training")
-        XCTAssertFalse(app.otherElements["unlocking"].exists)
+        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 10), "Training, with nothing to answer")
         XCTAssertTrue(studioShows(app))
+        XCTAssertTrue(waitStatus(app, contains: "intro launch>unlock>done · ", 5), "launch clip, unlock clip, Training: \(status(app))")
+        XCTAssertFalse(app.buttons["unlock"].exists, "no Unlock button anywhere")
+        XCTAssertFalse(XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch.exists, "no system prompt")
         sleep(1)
-        shot("unlock-6-training")
+        shot("launch-3-training")
     }
 
-    /// A tap skips the launch clip straight to the lock screen.
+    /// A tap skips the launch clip: the unlock clip plays from its last frame, then Training.
     func testATapSkipsTheIntro() {
-        // the launch clip at a fifth of its speed (about 17 s), so the tap lands during it on a slow simulator
-        let app = launch(env: ["VIRT_TEST_HTML": Self.page, "VIRT_INTRO_RATE": "0.2"], unlock: false)
+        // the launch clip at a fifth of its speed (about 20 s), so the tap lands during it on a slow simulator
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page, "VIRT_INTRO_RATE": "0.2"], waitForIntro: false)
         let skip = app.descendants(matching: .any)["skip-intro"]
         XCTAssertTrue(skip.waitForExistence(timeout: 10), "the launch clip can be skipped")
         XCTAssertEqual(introStage(app), "launch")
         skip.tap()
-        XCTAssertTrue(waitIntro(app, "lock", 1.5), "straight to the lock screen: \(introStage(app))")
-        XCTAssertTrue(app.buttons["unlock"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.webViews["studio"].staticTexts["handler: yes"].waitForExistence(timeout: 8),
+                      "the unlock clip, then Training, long before the slowed launch clip would have ended")
+        XCTAssertTrue(waitStatus(app, contains: "intro launch>unlock>done · ", 5), "skipped to the unlock clip: \(status(app))")
     }
 
-    /// Face ID says yes while the launch clip is still playing: the V lands quickly, the unlock clip plays, then
-    /// Training, and the lock screen's button never shows.
-    func testUnlockDuringTheIntro() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-uitest", "-uitest-reset", "-uitest-auto-unlock"]
-        app.launchEnvironment = ["VIRT_TEST_HTML": Self.page]
-        app.launch()
-        let web = app.webViews["studio"]
-        var sawButton = false
-        let end = Date().addingTimeInterval(10)
-        while Date() < end, !web.staticTexts["handler: yes"].exists || app.otherElements["unlocking"].exists
-                || app.otherElements["lock-screen"].exists {
-            if app.buttons["unlock"].exists { sawButton = true }
-            usleep(150_000)
-        }
-        XCTAssertTrue(studioShows(app), "Training, within 10 s of launch")
-        // the test build's status line lists the intro's stages: the launch clip, the unlock clip, Training
-        XCTAssertTrue(waitStatus(app, contains: "intro launch>unlock>done", 5), "the unlock clip played: \(status(app))")
-        XCTAssertFalse(sawButton, "no lock screen on the way")
-    }
-
-    /// Reduce Motion: no video. The lock screen's V fades in at once, and Unlock fades straight to Training.
+    /// Reduce Motion: no video at all, straight into Training.
     func testReduceMotionHasNoVideo() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-uitest", "-uitest-reset", "-uitest-skip-faceid", "-uitest-reduce-motion"]
-        app.launchEnvironment = ["VIRT_TEST_HTML": Self.page]
-        app.launch()
-        let button = app.buttons["unlock"]
-        XCTAssertTrue(button.waitForExistence(timeout: 5))
-        XCTAssertEqual(introStage(app), "lock", "no launch clip")
-        sleep(1)
-        shot("reduce-motion-lock")
-        button.tap()
-        XCTAssertFalse(app.otherElements["unlocking"].waitForExistence(timeout: 0.5), "no unlock clip")
-        XCTAssertTrue(app.webViews["studio"].staticTexts["handler: yes"].waitForExistence(timeout: 5))
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page], waitForIntro: false, args: ["-uitest-reduce-motion"])
+        XCTAssertTrue(app.webViews["studio"].staticTexts["handler: yes"].waitForExistence(timeout: 10))
         XCTAssertTrue(studioShows(app))
+        XCTAssertTrue(waitStatus(app, contains: "intro done · ", 5), "no clip: \(status(app))")
+        XCTAssertFalse(app.otherElements["intro"].exists)
     }
 
     /// The launch clip's last frame (seconds in): VIRT_INTRO_AT for the end of the clip. App/Intro/virt-launch.mp4.
     static let launchLastFrame = 3.99
 
-    // MARK: - The Face ID lock
+    // MARK: - The app switcher's cover (no lock)
 
-    /// A fresh launch shows the lock screen first, with Training hidden; Unlock shows the page, already loaded.
-    func testLockScreenFirstThenUnlock() {
-        let app = launch(env: ["VIRT_TEST_HTML": Self.page], unlock: false)
-        XCTAssertTrue(app.otherElements["lock-screen"].waitForExistence(timeout: 15), "the lock screen shows first")
-        let button = app.buttons["unlock"]
-        XCTAssertTrue(button.waitForExistence(timeout: 8), "the launch clip ends on Unlock")
-        sleep(2)  // the page loads behind the lock
-        XCTAssertFalse(studioShows(app), "nothing of Training shows while locked")
-        shot("lock")
-        button.tap()
-        let web = app.webViews["studio"]
-        XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 8), "the unlock clip ends on the page, already loaded")
-        XCTAssertFalse(app.otherElements["lock-screen"].exists)
-        XCTAssertTrue(studioShows(app))
-    }
-
-    /// When Face ID fails or he cancels: still locked, a short note, and Unlock to try again. No way around it.
-    func testFailedUnlockStaysLocked() {
-        let app = launch(env: ["VIRT_TEST_HTML": Self.page], unlock: false, faceIDFails: true)
-        let button = app.buttons["unlock"]
-        XCTAssertTrue(button.waitForExistence(timeout: 15))
-        button.tap()
-        let note = app.staticTexts["lock-note"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5), "a note says why")
-        XCTAssertTrue(note.label.contains("Try again") || note.label.contains("try again"), note.label)
-        sleep(1)
-        shot("lock-failed")
-        XCTAssertTrue(app.otherElements["lock-screen"].exists, "still locked")
-        XCTAssertTrue(button.isEnabled, "he can try again")
-        button.tap()
-        sleep(1)
-        XCTAssertTrue(app.otherElements["lock-screen"].exists, "still locked after a second try")
-        XCTAssertFalse(studioShows(app))
-    }
-
-    /// The app switcher's picture shows the cover, not Training; a quick trip away doesn't ask to unlock again.
+    /// The app switcher's picture shows the cover, not Training; coming back lifts it, with nothing to answer.
     func testAppSwitcherCoverAndAQuickTrip() {
         let app = launch(env: ["VIRT_TEST_HTML": Self.page])
         let web = app.webViews["studio"]
@@ -744,62 +688,63 @@ final class VirtUITests: XCTestCase {
         shot("app-switcher-2")
         app.activate()
         XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 10), "back in Training")
-        XCTAssertFalse(app.buttons["unlock"].exists, "a quick trip away doesn't lock")
+        XCTAssertFalse(app.otherElements["privacy-cover"].exists, "the cover lifted")
+        XCTAssertFalse(app.otherElements["intro"].exists, "no intro on the way back")
         XCTAssertTrue(studioShows(app))
     }
 
-    /// With the time away cut to 3 seconds (the test build only): coming back mid-workout never asks; once the
-    /// workout is finished, coming back locks it.
-    func testLocksAfterTimeAwayButNeverMidWorkout() {
-        let app = launch(env: ["VIRT_TEST_HTML": Self.page, "VIRT_LOCK_AFTER": "3"])
+    /// A phone that had build 100's Lock after set to Right away (that stored value stays on the phone, unread, for a
+    /// rollback; `-lock.after now` puts it there): coming back, mid-workout or not, is straight into Training, the same
+    /// page, with no intro and nothing to answer.
+    func testComingBackNeverAsksEvenWithBuild100sLockSetting() {
+        let app = launch(env: ["VIRT_TEST_HTML": Self.page], args: ["-lock.after", "now"])
         let web = app.webViews["studio"]
         XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20))
         web.buttons["Start rest"].tap()
-        allowAlerts()
         XCTAssertTrue(waitStatus(app, contains: "timer rest:"), status(app))
 
         XCUIDevice.shared.press(.home)
-        sleep(6)
+        sleep(4)
         app.activate()
         XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 10), "mid-workout: straight back in")
-        XCTAssertFalse(app.buttons["unlock"].exists, "no unlock mid-workout")
+        XCTAssertFalse(app.otherElements["intro"].exists, "no intro on the way back")
 
         web.buttons["Finish"].tap()
         XCTAssertTrue(waitStatus(app, contains: "timer none"), status(app))
         XCUIDevice.shared.press(.home)
-        sleep(6)
+        sleep(4)
         app.activate()
-        let button = app.buttons["unlock"]
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "away long enough with no workout: locked")
-        XCTAssertFalse(studioShows(app))
-        shot("locked-again")
-        XCTAssertEqual(introStage(app), "lock", "locked again: the V lock screen, no launch clip")
-        button.tap()
-        XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 8), "unlocked: the same page, right where it was")
+        XCTAssertTrue(web.buttons["Finish"].waitForExistence(timeout: 10), "no workout: straight back in too, the same page")
+        XCTAssertTrue(studioShows(app))
+        XCTAssertFalse(app.otherElements["intro"].exists)
+        XCTAssertFalse(app.otherElements["privacy-cover"].exists, "the cover lifted")
+        XCTAssertFalse(app.buttons["unlock"].exists, "no Unlock button")
+        XCTAssertTrue(status(app).contains("intro launch>unlock>done · "), "the intro played once, at launch: \(status(app))")
+        shot("back-no-lock")
     }
 
     // MARK: - Settings through the bridge (the You tab)
 
     /// The page's You tab and Virt's settings sheet are two views of the same values: the page reads
-    /// `kineticApp.prefs` at load, changes one with `{ type: 'pref' }`, and hears `kinetic:prefs` back; a bad value is
-    /// ignored; the next load starts with the new value; the sheet shows it; and the page's sign out asks with the
-    /// sheet's own confirmation (cancelled here), while Delete account isn't offered on this door at all.
+    /// `kineticApp.prefs` at load (with no `lockAfter`: Virt has no lock since Nov 28), changes one with
+    /// `{ type: 'pref' }`, and hears `kinetic:prefs` back; an older page's Lock after and a bad value are ignored; the
+    /// next load starts with the new value; the sheet shows it; and the page's sign out asks with the sheet's own
+    /// confirmation (cancelled here), while Delete account isn't offered on this door at all.
     func testThePageChangesASettingAndHearsIt() {
         let app = launch(env: ["VIRT_TEST_HTML": Self.prefsPage])
         let web = app.webViews["studio"]
         XCTAssertTrue(web.staticTexts["handler: yes"].waitForExistence(timeout: 20), status(app))
-        XCTAssertTrue(web.staticTexts["at start: lock 15m, sounds true, style chime"].exists, "kineticApp.prefs before the page's scripts")
-        XCTAssertTrue(waitStatus(app, contains: "lock 15m"), status(app))
+        XCTAssertTrue(web.staticTexts["at start: no lock, sounds true, style chime"].exists, "kineticApp.prefs before the page's scripts, no lockAfter")
+        XCTAssertTrue(waitStatus(app, contains: "prefs sent"), status(app))
+        sleep(2)
+        let sentBefore = prefsSent(app)
         shot("prefs-start")
 
+        // an older page's Lock after: ignored quietly (nothing stored, no kinetic:prefs, and still no lockAfter)
         web.buttons["Lock never"].tap()
-        XCTAssertTrue(waitStatus(app, contains: "lock never"), "the page's pref changed the stored setting: \(status(app))")
-        XCTAssertTrue(web.staticTexts["event: lock never, sounds true"].waitForExistence(timeout: 10), "kinetic:prefs reached the page")
-        XCTAssertTrue(web.staticTexts["now: lock never"].exists, "kineticApp.prefs is up to date too")
-
-        web.buttons["Lock 5m"].tap()  // not a value Virt knows: ignored
         sleep(2)
-        XCTAssertTrue(status(app).contains("lock never"), status(app))
+        XCTAssertEqual(prefsSent(app), sentBefore, "no kinetic:prefs for it: \(status(app))")
+        XCTAssertFalse(web.staticTexts["now: lock never"].exists, status(app))
 
         // the style list comes with the prefs (Nov 27: back to three, one plain list), and any id in it can be chosen
         XCTAssertTrue(web.staticTexts["styles: 3, first Chime (), last Classic ()"].exists, "kineticApp.prefs.soundStyles")
@@ -824,10 +769,11 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(waitStatus(app, contains: "style digital"), status(app))
 
         web.buttons["Sounds off"].tap()
-        XCTAssertTrue(web.staticTexts["event: lock never, sounds false"].waitForExistence(timeout: 10))
+        XCTAssertTrue(web.staticTexts["event: no lock, sounds false"].waitForExistence(timeout: 10), "kinetic:prefs reached the page")
+        XCTAssertTrue(web.staticTexts["now: no lock, sounds false"].exists, "kineticApp.prefs is up to date too")
 
         app.buttons["dbg-reload"].tap()  // the test build loads the stand-in page again
-        XCTAssertTrue(web.staticTexts["at start: lock never, sounds false, style digital"].waitForExistence(timeout: 20),
+        XCTAssertTrue(web.staticTexts["at start: no lock, sounds false, style digital"].waitForExistence(timeout: 20),
                       "the next load starts with the new values")
 
         // the native sheet shows the same values
@@ -852,8 +798,8 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(web.staticTexts["handler: yes"].exists, "cancelled: still signed in, same page")
     }
 
-    /// Stands in for the You tab: reads kineticApp.prefs at load, posts prefs and account asks, and shows each
-    /// kinetic:prefs event.
+    /// Stands in for the You tab: reads kineticApp.prefs at load, posts prefs (and, as an older page would, Lock after)
+    /// and account asks, and shows each kinetic:prefs event.
     static let prefsPage = """
     <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#15171b"></head>
@@ -864,7 +810,6 @@ final class VirtUITests: XCTestCase {
     <p id="event">event: none</p>
     <p id="now">now: none</p>
     <p><button onclick="pref('lockAfter', 'never')" style="font-size: 17px">Lock never</button>
-    <button onclick="pref('lockAfter', '5m')" style="font-size: 17px">Lock 5m</button>
     <button onclick="pref('sounds', false)" style="font-size: 17px">Sounds off</button></p>
     <p id="styles">styles: none</p>
     <p><button onclick="pref('soundStyle', 'classic')" style="font-size: 17px">Classic</button>
@@ -878,13 +823,15 @@ final class VirtUITests: XCTestCase {
     const pref = (key, value) => post({ type: 'pref', key, value });
     const k = window.kineticApp || {};
     const p = k.prefs;
-    document.getElementById('start').textContent = p ? 'at start: lock ' + p.lockAfter + ', sounds ' + p.sounds + ', style ' + p.soundStyle : 'at start: none';
+    const lock = (o) => o && 'lockAfter' in o ? 'lock ' + o.lockAfter : 'no lock';
+    document.getElementById('start').textContent = p ? 'at start: ' + lock(p) + ', sounds ' + p.sounds + ', style ' + p.soundStyle : 'at start: none';
     const ls = (p && p.soundStyles) || [];
     if (ls.length) document.getElementById('styles').textContent = 'styles: ' + ls.length + ', first ' + ls[0].name + ' (' + ls[0].group + '), last ' + ls[ls.length - 1].name + ' (' + ls[ls.length - 1].group + ')';
     addEventListener('kinetic:prefs', (e) => {
       const d = e.detail || {};
-      document.getElementById('event').textContent = 'event: lock ' + d.lockAfter + ', sounds ' + d.sounds;
-      document.getElementById('now').textContent = 'now: lock ' + (window.kineticApp && window.kineticApp.prefs ? window.kineticApp.prefs.lockAfter : 'none');
+      const now = window.kineticApp && window.kineticApp.prefs;
+      document.getElementById('event').textContent = 'event: ' + lock(d) + ', sounds ' + d.sounds;
+      document.getElementById('now').textContent = now ? 'now: ' + lock(now) + ', sounds ' + now.sounds : 'now: none';
     });
     </script></body></html>
     """

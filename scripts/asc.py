@@ -368,8 +368,11 @@ BETA_DESCRIPTION = ("Virt is a workout tracker. Pick a starter plan or build you
                     "account. No AI, no ads, no analytics.")
 WHAT_TO_TEST = ("Sign in with Apple, pick a plan, and run a workout: log sets, let a rest timer run with the phone "
                 "locked, and try the Log set button on the lock screen. Tell us anything that feels off.")
-REVIEW_NOTES = ("Tap Get started, answer the 13+ question, and sign in with Apple (any Apple ID works; no demo account "
-                "needed). Then pick a starter plan and start today's workout.")
+# the first screen since Nov 23: Sign in with Apple and Try a workout, no Get started or 13+ question; and since Nov 28
+# nothing asks for Face ID or the passcode to open Virt, so there's no lock to explain
+REVIEW_NOTES = ("Sign in with Apple on the first screen (any Apple ID works; no demo account needed), or tap Try a "
+                "workout to look around without an account. After signing in, answer five quick questions for a plan, "
+                "then start today's workout.")
 GROUP = "Friends"
 
 

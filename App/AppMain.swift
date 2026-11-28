@@ -13,7 +13,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         if ProcessInfo.processInfo.arguments.contains("-uitest-reset") {
             UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
             for k in [Reminders.Key.enabled, Reminders.Key.movedTo, SoundBoard.Key.enabled, SoundBoard.Key.style, SharedStore.localKey,
-                      LockAfter.key, TimerBoard.Snapshot.key, LiveWorkout.Memory.key, PendingLogs.key] {
+                      TimerBoard.Snapshot.key, LiveWorkout.Memory.key, PendingLogs.key] {
                 UserDefaults.standard.removeObject(forKey: k)
             }
             DoorStore.forget()
@@ -64,8 +64,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
     private var shell: ShellController?
-    /// The Face ID lock (Lock.swift): its window covers this one from the first frame.
-    private let lock = AppLock()
+    /// The intro and the app switcher's cover (Cover.swift): its window covers this one from the first frame, until
+    /// the intro has played into Training. Virt has no lock: nothing here asks for Face ID or the passcode.
+    private let cover = AppCover()
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let ws = scene as? UIWindowScene else { return }
@@ -81,7 +82,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         w.makeKeyAndVisible()
         window = w
         shell = s
-        lock.attach(to: ws, over: w)
+        cover.attach(to: ws, over: w)
         // opened from a widget, a link or a quick action
         if let url = options.urlContexts.first?.url { open(url) }
         if let item = options.shortcutItem, let link = AppLink.quickAction(item.type) { DispatchQueue.main.async { self.go(link) } }
@@ -113,10 +114,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    func sceneWillEnterForeground(_ scene: UIScene) { lock.willEnterForeground() }
+    func sceneWillEnterForeground(_ scene: UIScene) { cover.willEnterForeground() }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
-        lock.didBecomeActive()
+        cover.didBecomeActive()
         Engine.shared.becameActive()
         // a newer set of Training's screens, if there is one (at most every 30 minutes, never during a workout);
         // it's used from the next launch
@@ -124,12 +125,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
-        lock.willResignActive()
+        cover.willResignActive()
         Engine.shared.willResignActive()
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
-        lock.didEnterBackground()
+        cover.didEnterBackground()
         Engine.shared.didEnterBackground()
         shell?.saveSignIn()
         shell?.cancelStartWatch()

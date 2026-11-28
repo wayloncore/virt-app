@@ -10,10 +10,11 @@ import VirtCore
 
 /// Virt's settings in one place (VirtCore's AppPrefs; the contract is in CLAUDE.md, "The bridge"). The settings sheet
 /// and Training's You tab are two views of the same stored values, so both change them here: it stores the value,
-/// does what the value does (alerts rescheduled, reminders set, the lock's limit), and tells the page.
+/// does what the value does (alerts rescheduled, reminders set), and tells the page.
 ///
-/// The stored keys are the ones from before (`sounds.enabled`, `sounds.style`, `reminders.enabled`, `lock.after`):
-/// nothing new is saved.
+/// The stored keys are the ones from before (`sounds.enabled`, `sounds.style`, `reminders.enabled`): nothing new is
+/// saved. Virt has no lock since Nov 28, so the page hears no lock setting. Build 100's stored lock setting
+/// (`lock.after`) stays on the phone, never read and never cleared, so a rollback to build 100 still finds it.
 @MainActor final class PrefsHub {
     static let shared = PrefsHub()
 
@@ -28,7 +29,6 @@ import VirtCore
     var current: AppPrefs {
         AppPrefs(sounds: SoundBoard.shared.enabled, soundStyle: SoundBoard.shared.style,
                  reminders: Reminders.shared.enabled == true, reminderLine: ReminderLine.short(Engine.shared.today),
-                 lockAfter: LockAfter(stored: UserDefaults.standard.string(forKey: LockAfter.key)),
                  notifications: notificationsAllowed)
     }
 
@@ -69,11 +69,6 @@ import VirtCore
         SoundBoard.shared.style = s
         if preview { SoundBoard.shared.preview(s) }
         Engine.shared.soundStyleChanged()
-        update()
-    }
-
-    func setLockAfter(_ l: LockAfter) {
-        AppLock.setLockAfter(l)
         update()
     }
 

@@ -9,7 +9,7 @@ import WebKit
 /// decides whose Training it is (Tyler's linked Apple ID: his own studio Training, as an owner session; anyone else:
 /// their own Time2Play account).
 ///
-/// - The studio's Cloudflare Access sign-in (the `tyler` door, Face ID, CookieKeeper) stays as Tyler's fallback, shown
+/// - The studio's Cloudflare Access sign-in (the `tyler` door, CookieKeeper) stays as Tyler's fallback, shown
 ///   only on a phone that has used it.
 /// - Signing in with Apple is checked by the website's accounts server (tyleralocke.com/live/players/,
 ///   the same accounts the Time2Play app uses), then train.time2play.live with the session handed to the page before

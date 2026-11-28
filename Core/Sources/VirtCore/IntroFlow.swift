@@ -1,90 +1,56 @@
 import Foundation
 
-/// The video intro's order of events (App/Intro.swift plays the clips; App/Lock.swift drives this).
+/// The video intro's order of events (App/Intro.swift plays the clips; App/Cover.swift drives this). Virt has no lock
+/// of its own (Tyler, Nov 28: "Do we even need an app lock? ... Remove that"), so nothing here waits for Face ID or the
+/// passcode:
 ///
-/// 1. A fresh launch plays the launch clip (VIRT, the I, R and T wipe away, the V grows) while Face ID is already
-///    asking. It ends on the large V, which is the lock screen.
-/// 2. Face ID says yes: the unlock clip plays (the camera flies into the V until it's black), then Training fades in.
-///    If that happens before the launch clip ends, the launch clip finishes its V landing quickly first.
-/// 3. Locked again after time away: the V lock screen, no launch clip; the unlock clip on unlock.
-/// 4. A tap skips the launch clip to its last frame. With Reduce Motion there's no video: cross-fades only.
+/// 1. A fresh launch plays the launch clip (VIRT, the I, R and T wipe away, the V grows). It ends on the large V.
+/// 2. Straight on, the unlock clip plays (the camera flies into the V until it's black), then Training fades in.
+/// 3. A tap during the launch clip skips to its last frame, and the unlock clip plays from there.
+/// 4. No clip at all, straight into Training: while a workout is live (Virt remembers it across a launch,
+///    `LiveWorkout`), with Reduce Motion, and for a scene iOS builds again (the intro is the app's, once a launch).
+/// 5. Going to the background mid-clip ends the intro: a clip never resumes partway, so Training is there on return.
 ///
 /// Plain values, so the tests can walk every path without a phone. Nothing here is saved.
 public struct IntroFlow: Equatable, Sendable {
     public enum Stage: String, Sendable {
         /// The launch clip is playing.
         case launch
-        /// The lock screen: the V held still, with the Unlock button.
-        case lock
-        /// The unlock clip is playing (Face ID said yes).
+        /// The unlock clip is playing, into black.
         case unlock
         /// Training shows.
         case done
     }
 
-    /// How fast the rest of the launch clip plays once Face ID has said yes.
-    public static let hurryRate: Float = 3
-
     public private(set) var stage: Stage
-    /// Face ID said yes while the launch clip was playing: it finishes at `hurryRate`, then the unlock clip plays.
-    public private(set) var hurrying = false
-    public let reduceMotion: Bool
 
-    /// A fresh launch: the launch clip, or with Reduce Motion the lock screen at once (it fades in).
-    public init(reduceMotion: Bool) {
-        self.reduceMotion = reduceMotion
-        stage = reduceMotion ? .lock : .launch
-    }
+    /// A fresh launch with the clips (`atLaunch` decides whether there are any).
+    public init() { stage = .launch }
 
-    /// A launch that opens straight into Training: no clip and no lock screen (a workout is live, or Lock after is
-    /// Never). `LockPolicy.lockedAtLaunch` decides.
-    public static func open(reduceMotion: Bool) -> IntroFlow {
-        var f = IntroFlow(reduceMotion: reduceMotion)
-        f.stage = .done
+    /// How a launch, or a scene iOS built again, opens: the clips, or straight into Training. Never a clip while a
+    /// workout is live, none with Reduce Motion, and none for a scene built again.
+    public static func atLaunch(liveWorkout: Bool, reduceMotion: Bool, sceneRebuilt: Bool) -> IntroFlow {
+        var f = IntroFlow()
+        if liveWorkout || reduceMotion || sceneRebuilt { f.stage = .done }
         return f
     }
 
-    /// The launch clip reached its last frame, by playing or by a skip.
+    /// The launch clip reached its last frame, by playing or by a skip: the unlock clip plays.
     public mutating func launchEnded() {
-        guard stage == .launch else { return }
-        stage = hurrying ? .unlock : .lock
-        hurrying = false
+        if stage == .launch { stage = .unlock }
     }
 
-    /// A tap while the launch clip plays: straight to its last frame.
+    /// A tap while the launch clip plays: straight to its last frame, then the unlock clip.
     public mutating func skip() { launchEnded() }
 
-    /// Face ID (or the passcode) said yes.
-    public mutating func unlocked() {
-        switch stage {
-        case .launch: hurrying = true
-        case .lock: stage = reduceMotion ? .done : .unlock
-        case .unlock, .done: break
-        }
-    }
-
-    /// The unlock clip reached black.
+    /// The unlock clip reached black: Training.
     public mutating func unlockEnded() {
         if stage == .unlock { stage = .done }
     }
 
-    /// Locked again after time away: the lock screen, with no launch clip.
-    public mutating func relocked() {
-        stage = .lock
-        hurrying = false
-    }
+    /// The app went to the background with a clip playing: a clip never resumes partway, so it comes back to Training.
+    public mutating func interrupted() { stage = .done }
 
-    /// The app went to the background with a clip playing. A clip never resumes partway: it comes back on the lock
-    /// screen if it's still locked, or straight to Training if Face ID had already said yes.
-    public mutating func interrupted(locked: Bool) {
-        guard stage == .launch || stage == .unlock else { return }
-        stage = locked ? .lock : .done
-        hurrying = false
-    }
-
-    /// The Unlock button shows only on the lock screen itself, not over the clips.
-    public var showsUnlockButton: Bool { stage == .lock }
-
-    /// Face ID has said yes and a clip is still finishing: the lock window stays up until it's done.
-    public var playingOut: Bool { stage == .unlock || (stage == .launch && hurrying) }
+    /// A clip is still playing: the intro's window stays up until it's done.
+    public var playing: Bool { stage != .done }
 }

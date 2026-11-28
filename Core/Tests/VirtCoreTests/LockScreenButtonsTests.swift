@@ -177,8 +177,8 @@ final class LockScreenButtonsTests: XCTestCase {
               let start = engine.range(of: "func command(_ c: TimerCommand)") else { return XCTFail("Engine.command") }
         let rest = engine[start.upperBound...]
         let body = String(rest[..<(rest.range(of: "\n    }\n")?.lowerBound ?? rest.endIndex)])
-        for asks in ["requestAuthorization", "evaluatePolicy", "open(", "requestSceneSessionActivation", "activateSceneSession",
-                     "AppLock", "unlock("] {
+        for asks in ["requestAuthorization", "evaluatePolicy", "LAContext", "open(", "requestSceneSessionActivation",
+                     "activateSceneSession", "AppCover"] {
             XCTAssertFalse(body.contains(asks), "a press runs \(asks)")
         }
     }

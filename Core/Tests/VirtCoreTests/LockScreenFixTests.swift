@@ -188,50 +188,18 @@ final class LockScreenFixTests: XCTestCase {
         XCTAssertNil(LiveWorkout.Memory.decode(nil))
     }
 
-    func testLockAfterSetting() {
-        XCTAssertEqual(LockAfter(stored: nil), .fifteenMinutes, "the standard")
-        XCTAssertEqual(LockAfter(stored: "1h"), .oneHour)
-        XCTAssertEqual(LockAfter(stored: "from-the-future"), .fifteenMinutes)
-        XCTAssertEqual(LockAfter.allCases.map(\.name), ["Right away", "15 minutes", "1 hour", "Never"])
-        XCTAssertEqual(LockAfter.rightAway.limit, 0)
-        XCTAssertEqual(LockAfter.oneHour.limit, 3600)
-
-        // right away: any time in the background locks, but never mid-workout
-        var p = LockPolicy(awayLimit: LockAfter.rightAway.limit)
-        p.unlocked()
-        p.wentAway(at: 100)
-        XCTAssertFalse(p.cameBack(at: 101, midWorkout: true))
-        p.wentAway(at: 200)
-        XCTAssertTrue(p.cameBack(at: 201, midWorkout: false))
-
-        // an hour
-        var h = LockPolicy(awayLimit: LockAfter.oneHour.limit)
-        h.unlocked()
-        h.wentAway(at: 0)
-        XCTAssertFalse(h.cameBack(at: 59 * 60, midWorkout: false))
-        h.wentAway(at: 0)
-        XCTAssertTrue(h.cameBack(at: 60 * 60, midWorkout: false))
-
-        // never: not after a day, not even with a clock that went backward
-        var n = LockPolicy(awayLimit: LockAfter.never.limit)
-        n.unlocked()
-        n.wentAway(at: 0)
-        XCTAssertFalse(n.cameBack(at: 86_400, midWorkout: false))
-        n.wentAway(at: 100)
-        XCTAssertFalse(n.cameBack(at: 50, midWorkout: false))
-    }
-
+    /// The launch clip never plays while a workout is live (Virt remembers it across a launch): straight back in. With
+    /// no lock since Nov 28, that's the whole rule; nothing asks for Face ID either way.
     func testALaunchDuringALiveWorkoutOpensStraightIn() {
-        XCTAssertTrue(LockPolicy.lockedAtLaunch(lockAfter: .fifteenMinutes, liveWorkout: false))
-        XCTAssertTrue(LockPolicy.lockedAtLaunch(lockAfter: .rightAway, liveWorkout: false))
-        XCTAssertFalse(LockPolicy.lockedAtLaunch(lockAfter: .rightAway, liveWorkout: true), "never a lock while a workout is live")
-        XCTAssertFalse(LockPolicy.lockedAtLaunch(lockAfter: .never, liveWorkout: false))
-        let p = LockPolicy(awayLimit: 900, locked: false)
-        XCTAssertFalse(p.locked)
-        let f = IntroFlow.open(reduceMotion: false)
+        let kept = LiveWorkout.Memory(live: true, seenAt: s(0), fromPage: true)
+        let live = kept.stillLive(now: s(10 * 60))
+        XCTAssertTrue(live)
+        let f = IntroFlow.atLaunch(liveWorkout: live, reduceMotion: false, sceneRebuilt: false)
         XCTAssertEqual(f.stage, .done, "no launch clip")
-        XCTAssertFalse(f.playingOut)
-        XCTAssertFalse(f.showsUnlockButton)
+        XCTAssertFalse(f.playing)
+        let over = LiveWorkout.Memory(live: false, seenAt: s(0), fromPage: true)
+        XCTAssertEqual(IntroFlow.atLaunch(liveWorkout: over.stillLive(now: s(60)), reduceMotion: false, sceneRebuilt: false).stage,
+                       .launch, "no workout: the intro plays")
     }
 
     // MARK: - The board kept on the phone
