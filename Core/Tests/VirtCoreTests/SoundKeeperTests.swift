@@ -69,21 +69,24 @@ final class SoundKeeperTests: XCTestCase {
         XCTAssertTrue(SoundKeeper.cues(board: b, style: .chime, now: s(91)).isEmpty)
     }
 
-    /// A tone style (Nov 27): the keeper plays its one tone at both zeros, right on the zero (no lead).
-    func testAToneStyleThroughTheKeeper() {
+    /// Classic (one chime for both zeros) through the keeper: the 3-2-1 with Chime's tick before each zero.
+    func testClassicThroughTheKeeper() {
         var b = TimerBoard()
         b.apply(.workoutStart(title: "Intervals"), now: s(0))
         b.apply(.timerStart(TimerStart(id: "int:0", kind: .work, label: "Work", endsAt: s(30), startedAt: s(0), next: "Rest", upcoming: [
             Step(id: "int:1", kind: .intervalRest, label: "Rest", endsAt: s(45)),
         ])), now: s(0))
-        let cues = SoundKeeper.cues(board: b, style: .questJingle, now: s(1))
+        let cues = SoundKeeper.cues(board: b, style: .classic, now: s(1))
         XCTAssertEqual(cues.map(\.cue), [.rest, .go])
-        XCTAssertEqual(cues.map(\.file), ["virt-quest-jingle-zero.caf", "virt-quest-jingle-zero.caf"])
+        XCTAssertEqual(cues.map(\.file), ["virt-chime.wav", "virt-chime.wav"])
         XCTAssertEqual(cues.map(\.playAt), [s(27), s(42)], "the 3-2-1 ticks before each zero, locked too (Nov 27)")
         XCTAssertEqual(cues.map(\.tick), ["virt-chime-tick.caf", "virt-chime-tick.caf"])
-        // Digital is as it was; Digital up is its own tone style
-        XCTAssertEqual(SoundKeeper.cues(board: b, style: .digital, now: s(1)).first?.file, "virt-digital-rest.caf")
-        XCTAssertEqual(SoundKeeper.cues(board: b, style: .digitalUp, now: s(1)).map(\.playAt), [s(27), s(42)])
+        // Digital: its own tick and its own, louder tick gain
+        let d = SoundKeeper.cues(board: b, style: .digital, now: s(1))
+        XCTAssertEqual(d.first?.file, "virt-digital-rest.caf")
+        XCTAssertEqual(d.first?.tick, "virt-digital-tick.caf")
+        XCTAssertEqual(d.first?.tickVolume, SoundStyle.digital.tickVolume)
+        XCTAssertEqual(d.map(\.playAt), [s(27), s(42)])
     }
 
     func testEveryUpcomingZeroIsAhead() {

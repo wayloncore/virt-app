@@ -59,19 +59,19 @@ final class CountInTests: XCTestCase {
         XCTAssertEqual(LeadIn.beats(zero: s(60), now: s(59.99), length: 60), 0)
         XCTAssertEqual(LeadIn.beats(zero: s(60), now: s(61), length: 60), 0)
         let b = board(ends: 2.5)
-        XCTAssertEqual(SoundKeeper.cues(board: b, style: .glass, now: s(0)).map(\.playAt), [s(0.5)])
+        XCTAssertEqual(SoundKeeper.cues(board: b, style: .classic, now: s(0)).map(\.playAt), [s(0.5)])
     }
 
     func testMinus15LeavingUnderThreeSeconds() {
         var b = board(ends: 20)
         b.apply(.minus15, now: s(3))  // 2 s left
-        let c = SoundKeeper.cues(board: b, style: .buzzerHorn, now: s(3))
+        let c = SoundKeeper.cues(board: b, style: .digital, now: s(3))
         XCTAssertEqual(c.map(\.zeroAt), [s(5)])
         XCTAssertEqual(c.map(\.beats), [1], "only -1 fits after the -2 beat's moment is too close")
         XCTAssertEqual(c.map(\.playAt), [s(4)])
         var d = board(ends: 30)
         d.apply(.minus15, now: s(10))  // 5 s left: all three
-        XCTAssertEqual(SoundKeeper.cues(board: d, style: .buzzerHorn, now: s(10)).map(\.playAt), [s(12)])
+        XCTAssertEqual(SoundKeeper.cues(board: d, style: .digital, now: s(10)).map(\.playAt), [s(12)])
     }
 
     func testAPauseInsideTheCountInStopsItAndResumeTimesItAgain() {
@@ -99,7 +99,7 @@ final class CountInTests: XCTestCase {
             Step(id: "int:3", kind: .intervalRest, label: "Switch", endsAt: s(65)),
             Step(id: "int:4", kind: .intervalRest, label: "Rest", endsAt: s(80)),
         ])
-        let c = SoundKeeper.cues(board: b, style: .marimba, now: s(1))
+        let c = SoundKeeper.cues(board: b, style: .classic, now: s(1))
         XCTAssertEqual(c.map(\.zeroAt), [s(30), s(32), s(62), s(65), s(80)])
         XCTAssertEqual(c.map(\.beats), [3, 1, 3, 2, 3])
         XCTAssertEqual(c.map(\.playAt), [s(27), s(31), s(59), s(63), s(77)])
@@ -231,11 +231,9 @@ final class CountInTests: XCTestCase {
 
     func peak(_ n: String) throws -> Double { 20 * log10(Double(try caf(n).samples.map(abs).max() ?? 0)) }
 
-    /// Nov 27: louder by one gain per style. The tone styles and the green light at -1.5 dBFS peak; Chime and Digital
-    /// each +5.5 dB on every file, so their loudest zero is at -1.5 and the ticks and clicks stay as far under it as
-    /// Tyler approved.
+    /// Nov 27: louder by one gain per style. The green light at -1.5 dBFS peak; Chime and Digital each +5.5 dB on every
+    /// file, so their loudest zero is at -1.5 and the ticks and clicks stay as far under it as Tyler approved.
     func testLevelsAndTheBalanceInsideEachStyle() throws {
-        for s in SoundStyle.allCases where s.isTone { XCTAssertEqual(try peak(s.file(.go)), -1.5, accuracy: 0.05, s.rawValue) }
         XCTAssertEqual(try peak(SoundStyle.startFile), -1.5, accuracy: 0.05)
         // (file, peak before Nov 27): each now exactly 5.5 dB up
         let before: [(String, Double)] = [
@@ -245,8 +243,12 @@ final class CountInTests: XCTestCase {
             ("virt-digital-tick.caf", -29.0), ("virt-digital-set.caf", -35.25),
         ]
         for (n, p) in before { XCTAssertEqual(try peak(n), p + 5.5, accuracy: 0.06, n) }
-        // the count-in's beats: 10 to 12 dB under a tone style's zero
-        let beat = try peak("virt-chime-tick.caf") + 20 * log10(Double(LeadIn.tickVolume))
-        XCTAssertEqual(beat - (-1.5), -11, accuracy: 1)
+        // the count-in's beats: about 11 dB under the style's work-ends zero, in Chime and in Digital (its own tick)
+        for st in [SoundStyle.chime, .digital] {
+            let beat = try peak(st.file(.leadIn)) + 20 * log10(Double(st.tickVolume))
+            XCTAssertEqual(beat - (try peak(st.file(.rest))), -11, accuracy: 0.5, st.rawValue)
+            XCTAssertLessThan(beat, -6, "\(st.rawValue): a beat never near clipping")
+        }
+        XCTAssertEqual(SoundStyle.classic.tickVolume, SoundStyle.chime.tickVolume, "Classic counts in with Chime's tick")
     }
 }

@@ -8,7 +8,7 @@ import VirtCore
 /// sound, with music playing, the music ducks from the count-in's first beat until the zero sound ends, and comes back.
 /// The lock-screen sound keeper (BackgroundSound) plays the same count-in and zero, as the same one sound.
 /// Nov 27 ("The sound could be louder"): each style's files got one gain (+5.5 dB for Chime and Digital), so the loudest
-/// zero is at -1.5 dBFS like the tone styles and the balance inside the style is as it was; `volume` sets how loud each
+/// zero is at -1.5 dBFS and the balance inside the style is as it was; `volume` sets how loud each
 /// cue plays against the others.
 ///
 /// Settings (Virt's settings sheet; saved-data rule: new keys only): `sounds.enabled` (on unless turned off) and
@@ -51,7 +51,8 @@ import VirtCore
         guard enabled, UIApplication.shared.applicationState == .active else { return false }
         let st = style
         let c = SoundKeeper.Cue(key: key, cue: cue, file: st.file(cue), tick: st.countInTick(cue), beats: beats,
-                                playAt: zeroAt.addingTimeInterval(-TimeInterval(beats)), zeroAt: zeroAt)
+                                playAt: zeroAt.addingTimeInterval(-TimeInterval(beats)), zeroAt: zeroAt,
+                                tickVolume: st.tickVolume)
         guard let made = CountInSound.player(for: c) else { return false }
         let (p, at) = made
         countIn?.player.stop()
@@ -143,20 +144,20 @@ import VirtCore
 /// that fit. One player plays the beats and the zero, so they're exactly a second apart, locked or open. Why one sound
 /// and not a player per tick: a lock-screen schedule is all-or-nothing this way (a pause stops one player; a sound
 /// that has started always reaches its zero), there's one `play(atTime:)` per zero to get right, and no new files
-/// ship (the 14 tone styles share Chime's tick; baking each into its own file would add ~5 MB).
+/// ship.
 @MainActor enum CountInSound {
     private static var pcm: [String: (rate: Int, samples: [Float])] = [:]
     private static var whole: [String: (rate: Int, samples: [Float])] = [:]
 
     /// Builds a style's two count-ins ahead (at launch, and when the style changes), so the first zero has it ready.
     static func warm(_ style: SoundStyle) {
-        for cue in [SoundCue.go, .rest] { _ = full(file: style.file(cue), tick: style.countInTick(cue)) }
+        for cue in [SoundCue.go, .rest] { _ = full(file: style.file(cue), tick: style.countInTick(cue), tickVolume: style.tickVolume) }
     }
 
     /// A player for this zero, and when it starts: the count-in from its first beat that fits. If a file can't be read
     /// as samples, the plain zero sound on the zero (the green light from its start, when there's room for it).
     static func player(for c: SoundKeeper.Cue) -> (AVAudioPlayer, Date)? {
-        if let w = full(file: c.file, tick: c.tick) {
+        if let w = full(file: c.file, tick: c.tick, tickVolume: c.tickVolume) {
             let part = LeadIn.slice(w.samples, rate: w.rate, beats: c.beats)
             if !part.isEmpty, let p = try? AVAudioPlayer(data: LeadIn.wav(part, rate: w.rate)) {
                 p.prepareToPlay()
@@ -172,8 +173,8 @@ import VirtCore
         return (p, c.zeroAt)
     }
 
-    private static func full(file: String, tick: String?) -> (rate: Int, samples: [Float])? {
-        let key = "\(tick ?? "-")+\(file)"
+    private static func full(file: String, tick: String?, tickVolume: Float) -> (rate: Int, samples: [Float])? {
+        let key = "\(tick ?? "-")@\(tickVolume)+\(file)"
         if let w = whole[key] { return w }
         guard let z = samples(file) else { return nil }
         var t: [Float]?
@@ -181,7 +182,7 @@ import VirtCore
             guard let s = samples(tick), s.rate == z.rate else { return nil }
             t = s.samples
         }
-        let w = (rate: z.rate, samples: LeadIn.compose(tick: t, zero: z.samples, rate: z.rate))
+        let w = (rate: z.rate, samples: LeadIn.compose(tick: t, zero: z.samples, rate: z.rate, tickVolume: tickVolume))
         whole[key] = w
         return w
     }
