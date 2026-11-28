@@ -35,8 +35,8 @@ final class PrefsTests: XCTestCase {
         let list = o["soundStyles"] as! [[String: String]]
         XCTAssertEqual(list.map { $0["id"]! }, ids)
         XCTAssertEqual(list.map { Set($0.keys) }, Array(repeating: ["id", "name", "group"], count: ids.count))
-        XCTAssertEqual(list[0], ["id": "chime", "name": "Chime", "group": "Classic"])
-        XCTAssertEqual(list.first { $0["id"] == "buzzer-horn" }, ["id": "buzzer-horn", "name": "Buzzer horn", "group": "Clean"])
+        XCTAssertEqual(list[0], ["id": "chime", "name": "Chime", "group": ""])
+        XCTAssertNil(list.first { $0["id"] == "buzzer-horn" }, "the tone styles are gone (Nov 27)")
     }
 
     func testTheLineCanNeverBreakOutOfItsQuotes() {

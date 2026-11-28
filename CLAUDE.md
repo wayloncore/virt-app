@@ -139,8 +139,9 @@ the same contract in its docs/kinetic/bridge.md). All additive:
 - Before the page's scripts, every load: `kineticApp.prefs = { sounds: bool, soundStyle: <any id in soundStyles>,
   reminders: bool, reminderLine: '6:00 PM on Mon, Tue and Thu' ('' when off or not known), lockAfter:
   'now'|'15m'|'1h'|'never', notifications: 'on'|'off', soundStyles: [{ id, name, group }] }` ('off' only when iOS has them off; never asked
-  reads 'on'). `soundStyles` (Nov 27) is every style in display order, from VirtCore's `SoundStyle` (names and groups
-  Classic, Clean, Playful live there, tested), so the page never keeps its own copy.
+  reads 'on'). `soundStyles` (Nov 27) is every style in display order, from VirtCore's `SoundStyle` (tested), so the page
+  never keeps its own copy. Since the tone styles went (Nov 27), every `group` is "" (one plain list, no title; the
+  field stays for the page).
   The page decides what to show by whether `kineticApp.prefs` exists.
 - `kinetic:prefs` on `window` (CustomEvent, `detail` = the same object, and `kineticApp.prefs` updated in place)
   whenever one changes, from the page or Virt's sheet, and each time Virt comes forward.
@@ -198,8 +199,9 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   change, each `upcoming` step) in every style, open or locked, has beats at -3, -2 and -1 s and the zero sound
   exactly on the zero. Chime and Digital's rest-ends is the green light (`virt-start-go-3s.caf`), whose three short
   tones a second apart are its count-in; every other zero is the style's tick three times (Digital's own, Chime's for
-  the rest) at `LeadIn.tickVolume` (1.76, a gain baked into the samples: Chime's beats at -12.5 dBFS, 11 dB under a tone
-  style's zero), then its zero sound. Both the app and the keeper play it as **one sound per
+  Chime and Classic) at the style's `SoundStyle.tickVolume`, a gain baked into the samples (Chime and Classic 1.76,
+  Digital 3.55: in both, the beats at -12.5 dBFS, 11 dB under the work-ends zero; Classic's chime is -2.9, so 9.6 dB),
+  then its zero sound. Both the app and the keeper play it as **one sound per
   zero** (`CountInSound` in App/Sound.swift builds it in memory from the bundled tick and zero, `LeadIn.compose`), so
   one `play(atTime:)` covers the beats and the zero, exactly a second apart. The timing rule: it keeps its rhythm and
   always ends on the zero; with less room (a countdown under ~3 s, a -15 or a resume inside the last 3 s, a zero less
@@ -210,18 +212,17 @@ the same contract in its docs/kinetic/bridge.md). All additive:
   switch rest is 3 s of count-in; accepted. The first green light (`virt-start-go.caf`, 1.2 s) stays in the app,
   untouched, for a rollback; no style plays it.
 - **Levels** (Nov 27: "The sound could be louder"): one gain per style, never per file, so the balance inside a style
-  stays exactly as Tyler approved: Chime and Digital each +5.5 dB on every file (their loudest zero at -1.5 dBFS, the
-  tone styles' level; Chime's tick -17.4, set click -24.4; Digital's tick -23.5, click -29.8), by gain alone
+  stays exactly as Tyler approved: Chime and Digital each +5.5 dB on every file (their loudest zero at -1.5 dBFS; Chime's tick -17.4, set click -24.4; Digital's tick -23.5, click -29.8), by gain alone
   (`scripts/sounds.py`'s `style_gain`; `louder` for the Kenney picks). The green light, shared by both, is leveled to
   -1.5 on its own. Never normalize a tick or click by itself. How loud each cue plays against the others is
   `SoundBoard.volume` (a lone tick 0.55, click 0.6, finish 0.8, zeros 1). Classic's
   `virt-chime.wav` is as it was (-2.9 dBFS). Nothing louder is done on purpose: no limiting or compression, and no
   ducking while locked (the one lever left, off: Tyler, Nov 27, "the music didn't quiet down but that's fine").
-- The tones (Tyler, Nov 27; `scripts/sounds.py tones`, -1.5 dBFS, the exact synthesis he approved): 14 tone
-  styles (Digital up to Quest jingle, `SoundStyle.isTone`; Digital itself is unchanged) play
-  their one tone (`virt-<id>-zero.caf`) at both zeros after the count-in, with Chime's tick, click
-  and finish. The zeros play at full player volume. Settings shows them grouped (Classic, Clean, Playful); tapping one
-  chooses it and plays its work-ends sound. Always "Buzzer horn", never the word buzz alone.
+- **Three styles** (Tyler, Nov 27, after build 95's previews: "these are over kill ... i honestly just want the 3 we
+  had"): Chime, Digital and Classic, one plain list in Settings; tapping one chooses it and plays its work-ends sound.
+  The 14 tone styles of #27 (Digital up to Quest jingle) and their files are gone. A phone that saved one reads it back
+  as Digital (`digital-up`) or Chime (`SoundStyle(stored:)`, `SoundStyle.removed`); the page is only ever told a kept
+  id, and its own check falls back to Chime for an id it doesn't know. The zeros play at full player volume.
 - The lock: the cover shows only in the background (not for Control Center, Notification Center or the Face ID sheet)
   and lifts on return; never a lock or the launch clip while a workout is live (remembered across a launch,
   `virt.workout.live`); the lock is the app's, not the scene's; "Lock after" in Virt's settings (`lock.after`: Right

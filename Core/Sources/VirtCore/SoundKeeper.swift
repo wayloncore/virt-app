@@ -53,8 +53,12 @@ public enum SoundKeeper {
         /// When the sound starts: its first beat that fits (3 s before the zero when all three do), or the zero.
         public var playAt: Date
         public var zeroAt: Date
+        /// The gain the beats are baked in at (the style's `tickVolume`).
+        public var tickVolume: Float
 
-        public init(key: String, cue: SoundCue, file: String, tick: String?, beats: Int, playAt: Date, zeroAt: Date) {
+        public init(key: String, cue: SoundCue, file: String, tick: String?, beats: Int, playAt: Date, zeroAt: Date,
+                    tickVolume: Float = LeadIn.tickVolume) {
+            self.tickVolume = tickVolume
             self.key = key
             self.cue = cue
             self.file = file
@@ -79,7 +83,7 @@ public enum SoundKeeper {
             let n = LeadIn.beats(zero: a.fireAt, now: now, length: a.length)
             return Cue(key: key(identifier: a.identifier, fireAt: a.fireAt), cue: a.cue, file: style.file(a.cue),
                        tick: style.countInTick(a.cue), beats: n, playAt: a.fireAt.addingTimeInterval(-TimeInterval(n)),
-                       zeroAt: a.fireAt)
+                       zeroAt: a.fireAt, tickVolume: style.tickVolume)
         }.sorted { $0.playAt < $1.playAt }
     }
 

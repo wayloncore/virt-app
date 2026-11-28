@@ -39,7 +39,7 @@ struct SettingsView: View {
     @State private var alertsDenied = false
     private let today = Engine.shared.today
 
-    /// One style in the list: its name (and what it does, for the three that differ), a check on the chosen one.
+    /// One style in the list: its name and what it does, a check on the chosen one.
     private func styleRow(_ s: SoundStyle) -> some View {
         Button {
             style = s
@@ -48,9 +48,7 @@ struct SettingsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(s.name).foregroundStyle(soundsOn ? Color.primary : Color.secondary)
-                    if !s.isTone {
-                        Text(s.detail).font(.caption).foregroundStyle(.secondary)
-                    }
+                    Text(s.detail).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if s == style {
@@ -121,18 +119,12 @@ struct SettingsView: View {
                     Text("A sound at each zero, a 3-2-1 before it, a click when a set is logged, and a short finish. They mix with your music and follow the silent switch. With the phone locked during a workout, the 3-2-1 and the zero sound still play. With Sounds off, Virt makes no sound at all, on the Lock Screen too.")
                 }
 
-                // The styles, grouped (VirtCore's SoundStyle.Group): tap one to choose it and hear it (its work-ends
-                // sound), again to hear it again.
-                ForEach(SoundStyle.Group.allCases, id: \.self) { g in
-                    Section {
-                        ForEach(SoundStyle.styles(in: g), id: \.self) { s in styleRow(s) }
-                    } header: {
-                        Text(g.rawValue)
-                    } footer: {
-                        if g == .playful {
-                            Text("Chime and Digital play a green light when a rest ends (three short tones, then go on the zero). Every other tone plays at both zeros, after the 3-2-1.")
-                        }
-                    }
+                // The styles, one plain list (Nov 27: back to the three): tap one to choose it and hear it (its
+                // work-ends sound), again to hear it again.
+                Section {
+                    ForEach(SoundStyle.allCases, id: \.self) { s in styleRow(s) }
+                } header: {
+                    Text("Style")
                 }
 
                 Section {

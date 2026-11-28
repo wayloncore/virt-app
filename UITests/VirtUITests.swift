@@ -801,33 +801,33 @@ final class VirtUITests: XCTestCase {
         sleep(2)
         XCTAssertTrue(status(app).contains("lock never"), status(app))
 
-        // the full style list comes with the prefs, and any id in it can be chosen (Nov 27)
-        XCTAssertTrue(web.staticTexts["styles: 17, first Chime (Classic), last Quest jingle (Playful)"].exists, "kineticApp.prefs.soundStyles")
-        web.buttons["Quest jingle"].tap()
-        XCTAssertTrue(waitStatus(app, contains: "style quest-jingle"), status(app))
-        web.buttons["Whistle"].tap()  // not a style Virt has: ignored
+        // the style list comes with the prefs (Nov 27: back to three, one plain list), and any id in it can be chosen
+        XCTAssertTrue(web.staticTexts["styles: 3, first Chime (), last Classic ()"].exists, "kineticApp.prefs.soundStyles")
+        web.buttons["Classic"].tap()
+        XCTAssertTrue(waitStatus(app, contains: "style classic"), status(app))
+        web.buttons["Glass"].tap()  // a style Virt no longer has: ignored
         sleep(2)
-        XCTAssertTrue(status(app).contains("style quest-jingle"), status(app))
+        XCTAssertTrue(status(app).contains("style classic"), status(app))
 
-        // the sheet's grouped list: the chosen one is checked; tapping another chooses it
+        // the sheet's list: the chosen one is checked; tapping another chooses it
         app.buttons["dbg-settings"].tap()
-        let quest = app.buttons["style-quest-jingle"]
+        let classic = app.buttons["style-classic"]
         XCTAssertTrue(app.buttons["settings-done"].waitForExistence(timeout: 8))
-        for _ in 0..<4 where !quest.isHittable { app.swipeUp() }
-        XCTAssertTrue(quest.isSelected, "the page's choice is checked in the sheet")
+        for _ in 0..<4 where !classic.isHittable { app.swipeUp() }
+        XCTAssertTrue(classic.isSelected, "the page's choice is checked in the sheet")
         shot("sound-styles")
-        app.buttons["style-bounce"].tap()
-        XCTAssertTrue(app.buttons["style-bounce"].isSelected)
-        XCTAssertFalse(quest.isSelected)
+        app.buttons["style-digital"].tap()
+        XCTAssertTrue(app.buttons["style-digital"].isSelected)
+        XCTAssertFalse(classic.isSelected)
         app.buttons["settings-done"].tap()
-        XCTAssertTrue(quest.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(waitStatus(app, contains: "style bounce"), status(app))
+        XCTAssertTrue(classic.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(waitStatus(app, contains: "style digital"), status(app))
 
         web.buttons["Sounds off"].tap()
         XCTAssertTrue(web.staticTexts["event: lock never, sounds false"].waitForExistence(timeout: 10))
 
         app.buttons["dbg-reload"].tap()  // the test build loads the stand-in page again
-        XCTAssertTrue(web.staticTexts["at start: lock never, sounds false, style bounce"].waitForExistence(timeout: 20),
+        XCTAssertTrue(web.staticTexts["at start: lock never, sounds false, style digital"].waitForExistence(timeout: 20),
                       "the next load starts with the new values")
 
         // the native sheet shows the same values
@@ -867,8 +867,8 @@ final class VirtUITests: XCTestCase {
     <button onclick="pref('lockAfter', '5m')" style="font-size: 17px">Lock 5m</button>
     <button onclick="pref('sounds', false)" style="font-size: 17px">Sounds off</button></p>
     <p id="styles">styles: none</p>
-    <p><button onclick="pref('soundStyle', 'quest-jingle')" style="font-size: 17px">Quest jingle</button>
-    <button onclick="pref('soundStyle', 'whistle')" style="font-size: 17px">Whistle</button></p>
+    <p><button onclick="pref('soundStyle', 'classic')" style="font-size: 17px">Classic</button>
+    <button onclick="pref('soundStyle', 'glass')" style="font-size: 17px">Glass</button></p>
     <p><button onclick="post({ type: 'signOut' })" style="font-size: 17px">Sign out</button>
     <button onclick="post({ type: 'deleteAccount' })" style="font-size: 17px">Delete account</button></p>
     <script>

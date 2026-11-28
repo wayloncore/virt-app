@@ -27,79 +27,50 @@ public enum SoundCue: String, CaseIterable, Sendable {
 }
 
 /// The sound styles in Virt's settings. Saved-data rule: the stored value is the raw text; never rename a case.
-/// `allCases` is the display order (Classic, Clean, Playful), which the page gets as `kineticApp.prefs.soundStyles`.
+/// `allCases` is the display order, which the page gets as `kineticApp.prefs.soundStyles`.
+/// Nov 27 (Tyler, after build 95's previews: "these are over kill"): back to the three styles from before, one plain
+/// list. The 14 tone styles of #27 (Digital up to Quest jingle) are gone; a phone that saved one reads it back as
+/// Digital (for "digital-up") or Chime (`init(stored:)`).
 public enum SoundStyle: String, CaseIterable, Sendable {
     /// Clean synthesized bells, made for Virt.
     case chime
-    /// The first Virt chime, for every zero.
-    case classic
     /// Clean tones and clicks picked from Kenney's free (CC0) Interface Sounds.
     case digital
-    // The tone styles (Tyler, Nov 27): one loud tone, synthesized for Virt (`scripts/sounds.py tones`), for both zeros.
-    case digitalUp = "digital-up"
-    case glass
-    case sonar
-    case synthRise = "synth-rise"
-    case watchBeeps = "watch-beeps"
-    case marimba
-    case ringBell = "ring-bell"
-    case buzzerHorn = "buzzer-horn"
-    case arcade
-    case levelUp = "level-up"
-    case coinPickup = "coin-pickup"
-    case victory
-    case bounce
-    case questJingle = "quest-jingle"
+    /// The first Virt chime, for every zero.
+    case classic
 
     public static let standard: SoundStyle = .chime
 
-    /// The picker's small titles, in order.
-    public enum Group: String, CaseIterable, Sendable {
-        case classic = "Classic", clean = "Clean", playful = "Playful"
-    }
+    /// The ids of the tone styles the Nov 27 builds had (#27, up to build 95), kept only to read a saved one back.
+    public static let removed: Set<String> = [
+        "digital-up", "glass", "sonar", "synth-rise", "watch-beeps", "marimba", "ring-bell", "buzzer-horn", "arcade",
+        "level-up", "coin-pickup", "victory", "bounce", "quest-jingle",
+    ]
 
     public var name: String {
         switch self {
         case .chime: return "Chime"
-        case .classic: return "Classic"
         case .digital: return "Digital"
-        case .digitalUp: return "Digital up"
-        case .glass: return "Glass"
-        case .sonar: return "Sonar"
-        case .synthRise: return "Synth rise"
-        case .watchBeeps: return "Watch beeps"
-        case .marimba: return "Marimba"
-        case .ringBell: return "Ring bell"
-        case .buzzerHorn: return "Buzzer horn"
-        case .arcade: return "Arcade"
-        case .levelUp: return "Level up"
-        case .coinPickup: return "Coin pickup"
-        case .victory: return "Victory"
-        case .bounce: return "Bounce"
-        case .questJingle: return "Quest jingle"
+        case .classic: return "Classic"
         }
     }
-
-    public var group: Group {
-        switch self {
-        case .chime, .classic: return .classic
-        case .digital, .digitalUp, .glass, .sonar, .synthRise, .watchBeeps, .marimba, .ringBell, .buzzerHorn: return .clean
-        case .arcade, .levelUp, .coinPickup, .victory, .bounce, .questJingle: return .playful
-        }
-    }
-
-    /// The styles under one title, in display order.
-    public static func styles(in group: Group) -> [SoundStyle] { allCases.filter { $0.group == group } }
-
-    /// A tone style: its one tone is the zero sound for both zeros, and its other cues are Chime's.
-    public var isTone: Bool { group != .classic && self != .digital }
 
     public var detail: String {
         switch self {
         case .chime: return "A green light when a rest ends, a 3-2-1 and a soft falling bell when work ends"
         case .digital: return "A green light when a rest ends, a 3-2-1 and a falling run of clean tones when work ends"
-        case .classic: return "The first Virt chime"
-        default: return "The same tone at both zeros, after a 3-2-1"
+        case .classic: return "The first Virt chime, after a 3-2-1"
+        }
+    }
+
+    /// How loud the count-in's beats are baked in, as a gain on the style's tick file, so in every style they sit
+    /// about 11 dB under its zero sound (`LeadIn.compose`). Chime's tick (also Classic's) is -17.4 dBFS peak: x1.76
+    /// puts its beats at -12.5. Digital's own tick is -23.5: x3.55 (+11 dB) puts them at -12.5 too, 11 dB under
+    /// Digital's work-ends sound (-1.5).
+    public var tickVolume: Float {
+        switch self {
+        case .chime, .classic: return LeadIn.tickVolume
+        case .digital: return 3.55
         }
     }
 
@@ -116,8 +87,13 @@ public enum SoundStyle: String, CaseIterable, Sendable {
         return file(.leadIn)
     }
 
-    /// A stored value read back (an unknown one, from a newer Virt, falls back to the standard style).
-    public init(stored: String?) { self = SoundStyle(rawValue: stored ?? "") ?? .standard }
+    /// A stored value read back. A tone style saved by a Nov 27 build (up to 95) comes back as Digital if it was a Digital one
+    /// ("digital-up"), otherwise Chime; anything else unknown (from a newer Virt) falls back to the standard style.
+    public init(stored: String?) {
+        let v = stored ?? ""
+        if let s = SoundStyle(rawValue: v) { self = s; return }
+        self = v.hasPrefix("digital") ? .digital : .standard
+    }
 
     /// The race-start "go" (Tyler, Nov 24: "a training green-light sound"): three short even tones, then one longer,
     /// higher go tone. It's the sound when a rest ends in Chime and Digital, in the app and on the Lock Screen.
@@ -130,27 +106,25 @@ public enum SoundStyle: String, CaseIterable, Sendable {
     /// Where the go tone starts in `startFile`: its three short tones come first, so the go tone lands on the zero.
     public static let startLead: TimeInterval = LeadIn.seconds
 
-    /// The bundled file for a cue. Classic has one zero sound and a tone style one tone; their other cues use Chime's.
+    /// The bundled file for a cue. Classic has one zero sound; its other cues use Chime's.
     public func file(_ cue: SoundCue) -> String {
-        let zero = cue == .go || cue == .rest
         switch self {
         case .classic:
-            return zero ? "virt-chime.wav" : SoundStyle.chime.file(cue)
+            return cue.isZero ? "virt-chime.wav" : SoundStyle.chime.file(cue)
         case .chime, .digital:
             if cue == .go { return Self.startFile }
             return "virt-\(rawValue)-\(cue.rawValue).caf"
-        default:
-            return zero ? "virt-\(rawValue)-zero.caf" : SoundStyle.chime.file(cue)
         }
     }
 
     /// Every bundled file a style uses (the tests check each is in App/Sounds).
     public var files: Set<String> { Set(SoundCue.allCases.map(file)) }
 
-    /// The full list for the page, in display order: `[{"id":"chime","name":"Chime","group":"Classic"},…]`.
+    /// The full list for the page, in display order: `[{"id":"chime","name":"Chime","group":""},…]`. `group` stays in
+    /// each item for the page from #27 (saved-data rule: fields aren't removed); "" is one plain list with no title.
     public static var listJSON: String {
         "[" + allCases.map { s in
-            "{\"id\":\(AppPrefs.quote(s.rawValue)),\"name\":\(AppPrefs.quote(s.name)),\"group\":\(AppPrefs.quote(s.group.rawValue))}"
+            "{\"id\":\(AppPrefs.quote(s.rawValue)),\"name\":\(AppPrefs.quote(s.name)),\"group\":\"\"}"
         }.joined(separator: ",") + "]"
     }
 }
@@ -171,9 +145,9 @@ public enum LeadIn {
     public static let ahead: TimeInterval = 0.02
     /// And this much after the step began (the previous zero, or the countdown's start), so it never sits on top of it.
     public static let afterStart: TimeInterval = 0.25
-    /// How loud the beats are baked into the count-in, as a gain on the tick file (Nov 27). With the files in the
-    /// balance Tyler approved (Chime's tick at -17.4 dBFS peak), 1.76 (+4.9 dB) puts the beats at -12.5, 11 dB under a
-    /// tone style's zero (-1.5): clearly there over music, well under the zero. It's a gain in the samples (more than
+    /// How loud Chime's beats are baked into the count-in, as a gain on its tick file (Nov 27; each style has its own,
+    /// `SoundStyle.tickVolume`). With the files in the balance Tyler approved (Chime's tick at -17.4 dBFS peak), 1.76
+    /// (+4.9 dB) puts the beats at -12.5, 11 dB under Chime's zero (-1.5): clearly there over music, well under it. It's a gain in the samples (more than
     /// a player's volume can give); nothing clips (a tick never overlaps the zero sound).
     public static let tickVolume: Float = 1.76
 
