@@ -247,8 +247,17 @@ final class VirtUITests: XCTestCase {
         XCTAssertTrue(status(app).contains("bundle fixture-1"), status(app))
         XCTAssertFalse(status(app).contains("failed"), status(app))
 
-        web.buttons["Sign out here"].tap()
-        XCTAssertTrue(app.staticTexts["welcome-line"].waitForExistence(timeout: 10), "signed out from the bundled page: the first screen")
+        let signOut = web.buttons["Sign out here"]
+        XCTAssertTrue(signOut.waitForExistence(timeout: 10), status(app))
+        signOut.tap()
+        // the sign-out's own signals, waited for like the rest of this test (it flaked on a fixed 10 s, Nov 28): Virt
+        // leaves the friend's door (the status line stops saying so, then hides under the first screen), and the first
+        // screen is up
+        let end = Date().addingTimeInterval(20)
+        while Date() < end, status(app).contains("door friend") { usleep(300_000) }
+        let welcome = app.staticTexts["welcome-line"]
+        if !welcome.waitForExistence(timeout: 10) { shot("bundled-sign-out-missing") }
+        XCTAssertTrue(welcome.exists, "signed out from the bundled page: the first screen: \(status(app))")
     }
 
     /// A guest in bundled mode: "Try a workout" opens virt-app://train/try with no session. A link to the site's
